@@ -351,7 +351,7 @@ ${contextBlock}
 }
 
 // 初始化
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   console.log('🤖 数仓小助手已安装');
   loadConfigFromStorage().catch(() => {});
 
@@ -370,6 +370,18 @@ chrome.runtime.onInstalled.addListener(() => {
     }
   } catch (e) {
     // ignore
+  }
+
+  if (details?.reason === 'install') {
+    try {
+      if (chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+      } else {
+        chrome.tabs.create({ url: 'options.html' });
+      }
+    } catch (e) {
+      // ignore
+    }
   }
 });
 
