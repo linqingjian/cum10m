@@ -58,7 +58,8 @@ export class AIClient {
 
     logger.debug(`调用 AI: ${messages.length} 条消息`);
 
-    const response = await fetch(this.config.apiUrl, {
+    const requestUrl = this.normalizeApiUrl(this.config.apiUrl);
+    const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -87,6 +88,19 @@ export class AIClient {
       usage: data.usage,
       finishReason: data.choices?.[0]?.finish_reason,
     };
+  }
+
+  normalizeApiUrl(apiUrl) {
+    if (!apiUrl) {
+      return 'https://model-router.meitu.com/v1/chat/completions';
+    }
+
+    const trimmed = apiUrl.replace(/\/+$/u, '');
+    if (trimmed.endsWith('/v1')) {
+      return `${trimmed}/chat/completions`;
+    }
+
+    return trimmed;
   }
 
   /**

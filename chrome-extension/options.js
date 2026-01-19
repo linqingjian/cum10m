@@ -101,6 +101,8 @@ async function testConnection() {
   const apiToken = elements.apiToken.value.trim();
   const model = elements.model.value.trim();
 
+  const requestUrl = normalizeApiUrl(apiUrl);
+
   if (!apiUrl || !apiToken) {
     showStatus('❌ 请先填写 API URL 和 Token', 'error');
     return;
@@ -111,7 +113,7 @@ async function testConnection() {
   showStatus('正在测试连接...', 'info');
 
   try {
-    const response = await fetch(apiUrl, {
+    const response = await fetch(requestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -135,6 +137,19 @@ async function testConnection() {
     elements.testBtn.disabled = false;
     elements.testBtn.textContent = '🧪 测试连接';
   }
+}
+
+function normalizeApiUrl(apiUrl) {
+  if (!apiUrl) {
+    return DEFAULT_CONFIG.apiUrl;
+  }
+
+  const trimmed = apiUrl.replace(/\/+$/u, '');
+  if (trimmed.endsWith('/v1')) {
+    return `${trimmed}/chat/completions`;
+  }
+
+  return trimmed;
 }
 
 /**
