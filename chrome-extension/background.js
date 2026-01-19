@@ -16,6 +16,10 @@ let currentTask = null;
 let taskLogs = [];
 let executionHistory = [];
 let abortController = null;
+let lastResult = null;
+let lastError = null;
+let taskPaused = false;
+let activeTaskPromise = null;
 
 // ========== 消息监听 ==========
 
@@ -29,19 +33,68 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       switch (type) {
         case 'START_TASK':
-          const taskResult = await startTask(data.task, tabId);
-          sendResponse({ success: true, data: taskResult });
-          break;
+          {
+            const taskText = data?.task || message.task;
+            const model = data?.model || message.model;
+            if (!taskText) {
+              throw new Error('任务内容不能为空');
+            }
+
+            if (data?.task) {
+              const taskResult = await startTask(taskText, tabId, { model });
+              sendResponse({ success: true, data: taskResult });
+            } else {
+              startTaskAsync(taskText, tabId, { model });
+              sendResponse({ success: true, status: 'started' });
+            }
+            break;
+          }
+        case 'CHAT_MESSAGE':
+          {
+            const chatText = data?.message || message.message;
+            const model = data?.model || message.model;
+            const reply = await handleChatMessage(chatText, tabId, { model });
+            sendResponse({ success: true, reply });
+            break;
+          }
         case 'STOP_TASK':
           stopTask();
+          sendResponse({ success: true });
+          break;
+        case 'TASK_CANCEL':
+          stopTask();
+          chrome.runtime.sendMessage({ type: 'TASK_CANCELED' });
+          sendResponse({ success: true });
+          break;
+        case 'TASK_PAUSE':
+          pauseTask();
+          chrome.runtime.sendMessage({ type: 'TASK_PAUSED' });
+          sendResponse({ success: true });
+          break;
+        case 'TASK_RESUME':
+          resumeTask();
+          chrome.runtime.sendMessage({ type: 'TASK_RESUMED' });
           sendResponse({ success: true });
           break;
         case 'GET_TASK_STATUS':
           sendResponse({ success: true, data: getTaskStatus() });
           break;
+        case 'GET_STATUS':
+          sendResponse({
+            success: true,
+            status: getTaskStatus().status,
+            logs: logger.getLogs(),
+            lastResult: lastResult,
+            lastError: lastError,
+          });
+          break;
         case 'GET_LOGS':
           const logs = logger.getLogs();
           sendResponse({ success: true, data: logs });
+          break;
+        case 'CLEAR_LOGS':
+          logger.clear();
+          sendResponse({ success: true });
           break;
         case 'EXECUTE_SINGLE_ACTION':
           const actionResult = await executeAction(data, tabId);
@@ -64,13 +117,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 /**
  * 开始任务
  */
-async function startTask(task, tabId) {
+async function startTask(task, tabId, options = {}) {
   if (currentTask) {
     throw new Error('已有任务在执行中，请先停止');
   }
 
   try {
     abortController = new AbortController();
+    taskPaused = false;
+    lastResult = null;
+    lastError = null;
     currentTask = {
       id: Date.now().toString(),
       task,
@@ -105,10 +161,11 @@ async function startTask(task, tabId) {
     ];
 
     // 执行任务循环
-    const result = await executeTaskLoop(messages, tabId, maxSteps);
+    const result = await executeTaskLoop(messages, tabId, maxSteps, options);
 
     currentTask.status = 'completed';
     logger.success(`任务完成: ${result}`);
+    lastResult = result;
 
     return {
       task: currentTask,
@@ -118,6 +175,7 @@ async function startTask(task, tabId) {
   } catch (error) {
     currentTask.status = 'failed';
     logger.error(`任务失败: ${error.message}`);
+    lastError = error.message;
     throw error;
   } finally {
     currentTask = null;
@@ -136,14 +194,14 @@ function stopTask() {
   if (currentTask) {
     currentTask.status = 'stopped';
     logger.warn('任务已停止');
-    currentTask = null;
+    taskPaused = false;
   }
 }
 
 /**
  * 任务执行循环
  */
-async function executeTaskLoop(messages, tabId, maxSteps) {
+async function executeTaskLoop(messages, tabId, maxSteps, options = {}) {
   let stepCount = 0;
   const executor = new ActionExecutor(tabId);
 
@@ -151,6 +209,8 @@ async function executeTaskLoop(messages, tabId, maxSteps) {
     if (abortController?.signal.aborted) {
       throw new Error('任务已中止');
     }
+
+    await waitWhilePaused();
 
     stepCount++;
     logger.info(`执行步骤 ${stepCount}/${maxSteps}`);
@@ -160,6 +220,7 @@ async function executeTaskLoop(messages, tabId, maxSteps) {
       const aiResponse = await aiClient.chat(messages, {
         maxTokens: 1000,
         temperature: 0.3,
+        model: options.model,
       });
 
       const aiContent = aiResponse.content.trim();
@@ -168,6 +229,11 @@ async function executeTaskLoop(messages, tabId, maxSteps) {
       // 2. 解析 AI 响应
       const action = parseAIResponse(aiContent);
       logger.action(`AI 决策: ${action.type} - ${action.thinking || ''}`);
+      chrome.runtime.sendMessage({
+        type: 'TASK_PROGRESS',
+        action: action.type,
+        thinking: action.thinking || '',
+      });
 
       // 3. 检查任务是否完成
       if (action.done || action.type === 'done') {
@@ -214,6 +280,55 @@ async function executeTaskLoop(messages, tabId, maxSteps) {
 async function executeAction(data, tabId) {
   const executor = new ActionExecutor(tabId);
   return await executor.execute(data);
+}
+
+function startTaskAsync(task, tabId, options = {}) {
+  if (activeTaskPromise) {
+    throw new Error('已有任务在执行中，请先停止');
+  }
+
+  activeTaskPromise = startTask(task, tabId, options)
+    .then((result) => {
+      safeSendRuntimeMessage({ type: 'TASK_COMPLETE', result });
+      return result;
+    })
+    .catch((error) => {
+      if (String(error.message || '').includes('中止') || currentTask?.status === 'stopped') {
+        safeSendRuntimeMessage({ type: 'TASK_CANCELED' });
+      } else {
+        safeSendRuntimeMessage({ type: 'TASK_ERROR', error: error.message });
+      }
+      throw error;
+    })
+    .finally(() => {
+      activeTaskPromise = null;
+      taskPaused = false;
+    });
+}
+
+function pauseTask() {
+  if (!currentTask) {
+    return;
+  }
+  taskPaused = true;
+  currentTask.status = 'paused';
+}
+
+function resumeTask() {
+  if (!currentTask) {
+    return;
+  }
+  taskPaused = false;
+  currentTask.status = 'running';
+}
+
+async function waitWhilePaused() {
+  while (taskPaused) {
+    if (abortController?.signal.aborted) {
+      throw new Error('任务已中止');
+    }
+    await wait(300);
+  }
 }
 
 // ========== 辅助函数 ==========
@@ -302,6 +417,57 @@ async function getPageContext(tabId) {
   }
 }
 
+async function handleChatMessage(message, tabId, options = {}) {
+  if (!message) {
+    throw new Error('消息不能为空');
+  }
+
+  let url = '';
+  let pageContext = {};
+
+  if (tabId) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      url = tab.url || '';
+      pageContext = await getPageContext(tabId);
+    } catch (e) {
+      logger.warn(`获取页面信息失败: ${e.message}`);
+    }
+  }
+
+  const systemPrompt = `你是我的 AI 浏览器助手，负责回答用户的问题并给出清晰的建议。
+
+当前页面: ${url || 'N/A'}
+页面上下文: ${pageContext ? JSON.stringify(pageContext) : '{}'}
+
+回复要求：
+1. 使用简洁的中文回答
+2. 如果需要进一步操作，请说明下一步
+3. 避免返回 JSON，只输出自然语言`;
+
+  const response = await aiClient.chat(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: message },
+    ],
+    {
+      maxTokens: 1000,
+      temperature: 0.4,
+      model: options.model,
+    }
+  );
+
+  return response.content || '';
+}
+
+function safeSendRuntimeMessage(message) {
+  try {
+    chrome.runtime.sendMessage(message);
+  } catch (error) {
+    logger.debug(`发送消息失败: ${error.message}`);
+  }
+}
+
 /**
  * 等待函数
  */
@@ -313,10 +479,14 @@ function wait(ms) {
  * 获取任务状态
  */
 function getTaskStatus() {
+  const status = taskPaused ? 'paused' : (currentTask?.status || 'idle');
   return {
     task: currentTask,
     logs: logger.getLogs(),
     history: executionHistory,
+    status,
+    lastResult,
+    lastError,
   };
 }
 
