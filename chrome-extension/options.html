@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Browser Assistant - 配置</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+           margin: 0; padding: 20px; background: #f5f5f5; }
+    .container { max-width: 800px; margin: 0 auto; background: white; 
+                 padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    h1 { margin-top: 0; color: #333; }
+    .section { margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
+    h2 { color: #555; font-size: 18px; margin-bottom: 15px; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: 500; color: #333; }
+    input[type="text"], input[type="password"], select, textarea {
+      width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;
+      font-size: 14px; 
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: #4CAF50;
+    }
+    .help-text { font-size: 12px; color: #999; margin-top: 5px; }
+    button {
+      padding: 10px 20px; background: #4CAF50; color: white; border: none;
+      border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px;
+    }
+    button:hover { background: #45a049; }
+    button.secondary { background: #fff; color: #666; }
+    button.secondary:hover { background: #f0f0f0; }
+    .status { padding: 10px; border-radius: 4px; margin-top: 10px; 
+              font-size: 14px; display: none; }
+    .status.success { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🤖 AI Browser Assistant 配置</h1>
+    
+    <div class="section">
+      <h2>📡 AI 模型配置</h2>
+      <div class="form-group">
+        <label for="apiUrl">API URL</label>
+        <input type="text" id="apiUrl" placeholder="https://api.openai.com/v1/chat/completions">
+        <div class="help-text">聊天完成接口地址</div>
+      </div>
+      <div class="form-group">
+        <label for="apiToken">API Token</label>
+        <input type="password" id="apiToken" placeholder="sk-...">
+        <div class="help-text">用于调用 AI 模型的访问令牌</div>
+      </div>
+      <div class="form-group">
+        <label for="model">模型名称</label>
+        <input type="text" id="model" placeholder="gpt-4o">
+        <div class="help-text">使用的 AI 模型（如 gpt-4o, gpt-3.5-turbo）</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>🔔 通知配置（可选）</h2>
+      <div class="form-group">
+        <label for="webhookUrl">企业微信 Webhook URL</label>
+        <input type="text" id="webhookUrl" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
+        <div class="help-text">企业微信群机器人的 webhook 地址（可选）</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>🔑 服务账号配置（可选）</h2>
+      <div class="form-group">
+        <label for="confluenceToken">Confluence Token</label>
+        <input type="password" id="confluenceToken">
+        <div class="help-text">Confluence Personal Access Token（可选）</div>
+      </div>
+      <div class="form-group">
+        <label for="confluenceUsername">Confluence Username</label>
+        <input type="text" id="confluenceUsername">
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>⚙️ 运行配置</h2>
+      <div class="form-group">
+        <label for="maxSteps">最大步骤数</label>
+        <input type="number" id="maxSteps" value="15" min="1" max="50">
+        <div class="help-text">限制 AI 每个任务执行的最大步骤数</div>
+      </div>
+      <div class="form-group">
+        <label for="logLevel">日志级别</label>
+        <select id="logLevel">
+          <option value="debug">Debug（详细）</option>
+          <option value="info" selected>Info（普通）</option>
+          <option value="warn">Warn（警告）</option>
+          <option value="error">Error（仅错误）</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>
+          <input type="checkbox" id="verboseLogs"> 显示详细日志
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <div id="status" class="status"></div>
+      <button id="saveBtn">💾 保存配置</button>
+      <button id="testBtn" class="secondary">🧪 测试连接</button>
+      <button id="resetBtn" class="secondary">🔄 重置为默认</button>
+    </div>
+
+    <div class="section">
+      <h2>ℹ️ 关于</h2>
+      <p>AI Browser Assistant v2.0 - 通用化的 AI 浏览器助手</p>
+      <p>支持任意网页的自动化操作和多轮对话</p>
+    </div>
+  </div>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

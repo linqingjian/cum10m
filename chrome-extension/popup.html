@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Browser Assistant</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-size: 14px;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    .header-actions button {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.2s;
+    }
+
+    .header-actions button:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .status {
+      padding: 8px 20px;
+      font-size: 13px;
+    }
+
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status.warning {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .status.info {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      background: #f8f9fa;
+    }
+
+    .message {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      line-height: 1.5;
+      position: relative;
+    }
+
+    .message-user {
+      background: white;
+      color: #333;
+      margin-right: 0;
+      border-left: 4px solid #667eea;
+    }
+
+    .message-ai {
+      background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+      color: #333;
+      border-left: 4px solid #764ba2;
+    }
+
+    .message-system {
+      background: #fff3cd;
+      color: #856404;
+      border-left: 4px solid #ffc107;
+      font-size: 13px;
+    }
+
+    .message-time {
+      position: absolute;
+      right: 12px;
+      top: 12px;
+      font-size: 11px;
+      color: #999;
+    }
+
+    .input-area {
+      padding: 20px;
+      background: white;
+      border-top: 1px solid #e0e0e0;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    #task-input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      resize: none;
+      font-family: inherit;
+    }
+
+    #task-input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    #task-input::placeholder {
+      color: #999;
+    }
+
+    .btn {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    #send-btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    #send-btn:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    #send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    #stop-btn {
+      background: #dc3545;
+      color: white;
+      display: none;
+    }
+
+    #stop-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .action-btn {
+      flex: 1;
+      padding: 8px 12px;
+      font-size: 13px;
+      background: #f8f9fa;
+      border: 1px solid #e0e0e0;
+      border-radius: 6px;
+    }
+
+    .action-btn:hover {
+      background: #e9ecef;
+    }
+
+    .logs {
+      max-height: 150px;
+      background: #1a1a1a;
+      color: #00ff00;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 11px;
+      padding: 10px;
+      overflow-y: auto;
+      border-top: 1px solid #333;
+    }
+
+    .log-item {
+      margin-bottom: 4px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .log-time {
+      color: #666;
+      flex-shrink: 0;
+    }
+
+    .log-level {
+      color: #ffd700;
+      flex-shrink: 0;
+      width: 60px;
+    }
+
+    .log-message {
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🤖 AI Browser Assistant</h1>
+      <div class="header-actions">
+        <button id="open-settings">⚙️ 设置</button>
+      </div>
+    </div>
+
+    <div id="status" class="status success">✅ 就绪</div>
+
+    <div id="messages" class="messages"></div>
+
+    <div class="input-area">
+      <div class="input-group">
+        <textarea id="task-input" rows="2" placeholder="告诉我你想做什么...\n例如：帮我搜索 Google，然后在搜索框输入"你好""></textarea>
+      </div>
+      <div class="input-group">
+        <button id="send-btn" class="btn">🚀 发送任务</button>
+        <button id="stop-btn" class="btn">🛑 停止任务</button>
+      </div>
+      <div class="actions">
+        <button id="clear-logs" class="action-btn">🗑️ 清空日志</button>
+      </div>
+    </div>
+
+    <div id="logs" class="logs"></div>
+  </div>
+
+  <script type="module" src="popup.js.new"></script>
+</body>
+</html>

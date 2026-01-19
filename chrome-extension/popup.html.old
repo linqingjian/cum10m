@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数仓小助手</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html, body {
+      width: 100%;
+      height: 100%;
+    }
+
+    body {
+      width: 100%;
+      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #e4e4e4;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      margin: 0;
+    }
+    
+    header {
+      text-align: center;
+      margin-bottom: 15px;
+      flex-shrink: 0;
+    }
+    
+    h1 {
+      font-size: 1.4rem;
+      background: linear-gradient(90deg, #00d9ff, #00ff88);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .subtitle {
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 5px;
+    }
+    
+    .status-bar {
+      background: rgba(0, 217, 255, 0.1);
+      border: 1px solid rgba(0, 217, 255, 0.3);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 15px;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+    
+    .status-bar.ready { border-color: #00ff88; background: rgba(0, 255, 136, 0.1); }
+    .status-bar.working { border-color: #ffaa00; background: rgba(255, 170, 0, 0.1); }
+    .status-bar.error { border-color: #ff6b6b; background: rgba(255, 107, 107, 0.1); }
+    
+    .input-section {
+      margin-bottom: 15px;
+    }
+    
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 5px;
+    }
+    
+    textarea {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      font-size: 14px;
+      resize: none;
+      min-height: 80px;
+    }
+    
+    textarea:focus {
+      outline: 2px solid #00d9ff;
+    }
+    
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      font-size: 13px;
+    }
+    
+    input:focus {
+      outline: 1px solid #00d9ff;
+    }
+    
+    .btn-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    
+    button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: linear-gradient(135deg, #00d9ff, #00ff88);
+      color: #000;
+    }
+    
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    button:hover {
+      transform: translateY(-1px);
+    }
+    
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .output-section {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 150px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    
+    /* 聊天界面样式 */
+    .chat-container {
+      flex: 1;
+      display: flex !important;
+      flex-direction: column;
+      width: 100%;
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 8px;
+      overflow: hidden;
+      min-height: 0;
+    }
+    
+    .chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px;
+      background: rgba(0, 217, 255, 0.1);
+      border-radius: 8px 8px 0 0;
+      border-bottom: 1px solid rgba(0, 217, 255, 0.3);
+      flex-shrink: 0;
+      gap: 10px;
+    }
+    
+    .chat-title {
+      font-size: 0.9rem;
+      font-weight: bold;
+      color: #00d9ff;
+      white-space: nowrap;
+    }
+
+    .chat-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .chip-select {
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 999px;
+      color: #e4e4e4;
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+      max-width: 220px;
+    }
+
+    .chip-select:focus {
+      border-color: rgba(0, 217, 255, 0.6);
+    }
+
+    .chip-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 999px;
+      color: #e4e4e4;
+      font-size: 12px;
+      user-select: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .chip-toggle input {
+      accent-color: #00d9ff;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 15px;
+      background: rgba(0, 0, 0, 0.2);
+      max-height: none;
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      min-height: 0;
+    }
+
+    .mini-btn {
+      flex: 0 0 auto;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.06);
+      color: #e4e4e4;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      cursor: pointer;
+    }
+
+    .mini-btn:hover {
+      background: rgba(0, 217, 255, 0.15);
+      border-color: rgba(0, 217, 255, 0.35);
+    }
+
+    .mini-btn.danger:hover {
+      background: rgba(255, 107, 107, 0.15);
+      border-color: rgba(255, 107, 107, 0.45);
+    }
+
+    .mini-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .chat-message {
+      margin-bottom: 15px;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .chat-message.user-message {
+      align-items: flex-end;
+    }
+    
+    .chat-message.bot-message {
+      align-items: flex-start;
+    }
+    
+    .message-bubble {
+      max-width: 80%;
+      padding: 10px 15px;
+      border-radius: 12px;
+      word-wrap: break-word;
+      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    
+    .user-message .message-bubble {
+      background: linear-gradient(135deg, #00d9ff, #00ff88);
+      color: #000;
+      border-bottom-right-radius: 4px;
+    }
+    
+    .bot-message .message-bubble {
+      background: rgba(255, 255, 255, 0.1);
+      color: #e4e4e4;
+      border-bottom-left-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .message-time {
+      font-size: 10px;
+      color: #888;
+      margin-top: 5px;
+      padding: 0 5px;
+    }
+    
+    .chat-input-container {
+      display: flex;
+      gap: 10px;
+      padding: 10px;
+      background: rgba(0, 0, 0, 0.3);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 0 0 8px 8px;
+      flex-shrink: 0;
+    }
+
+    .attachment-bar {
+      display: none;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px 10px;
+      background: rgba(0, 0, 0, 0.22);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .attachment-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #e4e4e4;
+      font-size: 12px;
+      max-width: 100%;
+    }
+
+    .attachment-chip .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 320px;
+    }
+
+    .attachment-chip .remove {
+      cursor: pointer;
+      opacity: 0.8;
+      user-select: none;
+    }
+
+    .attachment-chip .remove:hover {
+      opacity: 1;
+      color: #ff6b6b;
+    }
+
+    .chat-input-container textarea {
+      flex: 1;
+      min-height: 50px;
+      max-height: 100px;
+      resize: none;
+      font-size: 13px;
+    }
+
+    .chat-input-actions {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      flex: 0 0 auto;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.08);
+      color: #e4e4e4;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .icon-btn:hover {
+      background: rgba(0, 217, 255, 0.15);
+      border-color: rgba(0, 217, 255, 0.35);
+    }
+
+    .icon-btn.danger:hover {
+      background: rgba(255, 107, 107, 0.15);
+      border-color: rgba(255, 107, 107, 0.45);
+    }
+
+    .send-btn {
+      flex: 0 0 auto;
+      padding: 10px 16px;
+      min-width: 60px;
+    }
+    
+    .chat-status {
+      padding: 5px 10px;
+      font-size: 11px;
+      color: #888;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.2);
+    }
+    
+    .chat-status.thinking {
+      color: #00d9ff;
+    }
+    
+    .chat-status.error {
+      color: #ff6b6b;
+    }
+    
+    .chat-messages::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    .chat-messages::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    
+    .chat-messages::-webkit-scrollbar-thumb {
+      background: rgba(0, 217, 255, 0.3);
+      border-radius: 3px;
+    }
+    
+    .chat-messages::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 217, 255, 0.5);
+    }
+    
+    /* 标签页切换 */
+    .tabs {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      flex-shrink: 0;
+    }
+    
+    .tab {
+      padding: 8px 15px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #888;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    
+    .tab.active {
+      color: #00d9ff;
+      border-bottom-color: #00d9ff;
+    }
+    
+    .tab-content {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+    }
+    
+    .tab-content.active {
+      display: flex !important;
+      flex-direction: column;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+    
+    /* 确保聊天消息区域可见 */
+    #chatMessages {
+      display: block !important;
+    }
+    
+    .log-item {
+      margin-bottom: 8px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    
+    .log-item.action { border-left: 3px solid #00d9ff; }
+    .log-item.result { border-left: 3px solid #00ff88; }
+    .log-item.error { border-left: 3px solid #ff6b6b; }
+    
+    .quick-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 15px;
+      flex-shrink: 0;
+    }
+    
+    .tabs {
+      flex-shrink: 0;
+      margin-bottom: 10px;
+    }
+    
+    .quick-btn {
+      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 15px;
+      color: #aaa;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    
+    .quick-btn:hover {
+      background: rgba(0, 217, 255, 0.2);
+      border-color: #00d9ff;
+      color: #fff;
+    }
+    
+    /* 结果展示区样式 */
+    .result-section {
+      background: linear-gradient(135deg, rgba(0, 255, 136, 0.15), rgba(0, 217, 255, 0.1));
+      border: 2px solid #00ff88;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 15px;
+      text-align: center;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    .result-section.error {
+      background: linear-gradient(135deg, rgba(255, 107, 107, 0.15), rgba(255, 170, 0, 0.1));
+      border-color: #ff6b6b;
+    }
+    
+    .result-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+    
+    .result-title {
+      font-size: 1.2rem;
+      font-weight: bold;
+      color: #00ff88;
+      margin-bottom: 15px;
+    }
+    
+    .result-section.error .result-title {
+      color: #ff6b6b;
+    }
+    
+    .result-content {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      padding: 15px;
+      text-align: left;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 14px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    
+    .result-content .highlight {
+      color: #00ff88;
+      font-weight: bold;
+      font-size: 1.1em;
+    }
+    
+    .result-content .label {
+      color: #888;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* 模型选择行 */
+    .model-select-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 15px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+    }
+    
+    .model-select-row label {
+      margin: 0;
+      white-space: nowrap;
+      color: #aaa;
+    }
+    
+    .model-select-row select {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      background: rgba(0, 217, 255, 0.15);
+      color: #00d9ff;
+      font-size: 13px;
+      cursor: pointer;
+      border: 1px solid rgba(0, 217, 255, 0.3);
+    }
+    
+    .model-select-row select:focus {
+      outline: none;
+      border-color: #00d9ff;
+    }
+    
+    /* 内联模型选择 */
+    .model-select-inline {
+      padding: 6px 10px;
+      background: rgba(0, 217, 255, 0.15);
+      border: 1px solid rgba(0, 217, 255, 0.3);
+      border-radius: 15px;
+      color: #00d9ff;
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+    }
+    
+    .model-select-inline:hover {
+      background: rgba(0, 217, 255, 0.25);
+    }
+    
+    details {
+      margin-top: 15px;
+    }
+    
+    summary {
+      cursor: pointer;
+      color: #888;
+      font-size: 0.85rem;
+    }
+    
+    .config-section {
+      margin-top: 10px;
+      display: grid;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🤖 数仓小助手</h1>
+    <p class="subtitle">AI 驱动的浏览器自动化</p>
+  </header>
+  
+  <div id="statusBar" class="status-bar ready">
+    ✅ 就绪 - 等待输入任务
+  </div>
+  
+  <div class="quick-actions">
+	    <span class="quick-btn" data-task="查询 stat_aigc.mpub_odz_aigc_outer_cost 表今天的 cost 总和">📊 查成本</span>
+	    <span class="quick-btn" data-task="查看当前页面的表结构">📋 看表结构</span>
+	    <span class="quick-btn" data-task="获取当前查询结果">📥 获取结果</span>
+	    <select id="model" class="model-select-inline">
+	      <option value="gemini-3-pro-preview">🤖 Gemini-3-Pro</option>
+	      <option value="gpt-4o-mini" selected>⚡ GPT-4o-mini</option>
+	      <option value="gpt-4o">GPT-4o</option>
+	      <option value="glm-4.7">🇨🇳 GLM-4.7</option>
+	      <option value="deepseek-v3">🔧 DeepSeek-V3</option>
+	      <option value="qwen-max">🇨🇳 Qwen-Max</option>
+	      <option value="gpt-5">GPT-5</option>
+	    </select>
+	  </div>
+  
+  <!-- 标签页切换 -->
+  <div class="tabs">
+    <button class="tab active" data-tab="chat">💬 实时对话</button>
+    <button class="tab" data-tab="logs">📋 执行日志</button>
+  </div>
+  
+  <!-- 聊天标签页 -->
+  <div id="chatTab" class="tab-content active chat-container">
+    <div class="chat-header">
+      <span class="chat-title">🤖 数仓小助手</span>
+      <div class="chat-controls">
+        <select id="chatMode" class="chip-select" title="选择对话/执行模式">
+          <option value="chat" selected>💬 纯对话</option>
+          <option value="exec_shenzhou">🧭 执行（优先神舟）</option>
+          <option value="exec_current">🧭 执行（优先当前页）</option>
+        </select>
+        <label class="chip-toggle" title="在回复中包含简要思路（不会展示模型隐含推理链路）">
+          <input id="chatShowPlan" type="checkbox" />
+          显示思路
+        </label>
+        <button id="pinBtn" class="mini-btn" title="打开并固定在浏览器右侧侧边栏（不会因点击页面而关闭）">📌 固定右侧</button>
+        <span id="chatStatus" class="chat-status">就绪</span>
+      </div>
+    </div>
+    <div id="chatMessages" class="chat-messages">
+      <div class="chat-message bot-message">
+        <div class="message-bubble">
+          你好！我是数仓小助手，可以帮你查询数据、执行SQL、查看表结构、分析任务、搜索文档等。有什么可以帮你的吗？
+        </div>
+        <div class="message-time" id="welcomeTime"></div>
+      </div>
+    </div>
+    <div id="attachmentBar" class="attachment-bar"></div>
+    <div class="chat-input-container">
+      <textarea id="chatInput" placeholder="输入你的问题..."></textarea>
+      <input id="fileInput" type="file" multiple style="display:none;" />
+      <div class="chat-input-actions">
+        <button id="attachBtn" class="icon-btn" title="上传文件">📎</button>
+        <button id="screenshotBtn" class="icon-btn" title="截图（当前可见页面）">📷</button>
+        <button id="pauseBtn" class="icon-btn" style="display:none;" title="暂停任务">⏸</button>
+        <button id="resumeBtn" class="icon-btn" style="display:none;" title="继续任务">▶️</button>
+        <button id="cancelBtn" class="icon-btn danger" style="display:none;" title="停止任务">⛔</button>
+        <button id="chatSendBtn" class="btn-primary send-btn">发送</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- 日志标签页 -->
+  <div id="logsTab" class="tab-content">
+    <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+      <div class="input-section">
+        <label>📝 输入任务</label>
+        <textarea id="taskInput" placeholder="例如：查询 stat_aigc.mpub_odz_aigc_outer_cost 表 20260101 至 20260110 的 cost 总和"></textarea>
+      </div>
+      
+      <div class="btn-group">
+        <button id="executeBtn" class="btn-primary">🚀 执行</button>
+        <button id="sendBtn" class="btn-secondary">📤 发到群</button>
+      </div>
+      
+      <div class="btn-group">
+        <button id="exportLogsBtn" class="btn-secondary">📥 导出日志</button>
+        <button id="clearLogsBtn" class="btn-secondary">🗑️ 清空日志</button>
+      </div>
+      
+      <!-- 结果展示区 -->
+      <div id="resultSection" class="result-section" style="display: none;">
+        <div id="resultIcon" class="result-icon">✅</div>
+        <div id="resultTitle" class="result-title">查询成功</div>
+        <div id="resultContent" class="result-content"></div>
+      </div>
+      
+      <div class="input-section" style="flex: 1; display: flex; flex-direction: column; min-height: 0; margin-top: 10px;">
+        <label>📋 执行日志</label>
+        <div id="outputArea" class="output-section" style="flex: 1; min-height: 0;">
+          等待执行任务...
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <details>
+    <summary>⚙️ 配置</summary>
+    <div class="config-section">
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="verboseLogs" />
+          显示详细日志（默认精简）
+        </label>
+      </div>
+      <div>
+        <label>API Token</label>
+        <input type="password" id="apiToken" value="3F324C709C4ADC9DA205E6AC">
+      </div>
+      <div>
+        <label>Confluence API Token</label>
+        <input type="password" id="confluenceToken" placeholder="Confluence Personal Access Token 或 Basic Auth (Base64)">
+        <label>周报根目录页面ID（可选）</label>
+        <input type="text" id="weeklyReportRootPageId" placeholder="例如：529775023（蔺清建-2025）">
+        <small style="color: #888; font-size: 11px; display: block; margin-top: 4px;">
+          留空则使用 API Token。如需 Basic Auth，格式：Base64(用户名:密码)
+        </small>
+      </div>
+      <div>
+        <label>Webhook URL</label>
+        <input type="text" id="webhookUrl" value="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=89d04707-d32a-4f69-855c-65bb52cbaa6b">
+      </div>
+    </div>
+  </details>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

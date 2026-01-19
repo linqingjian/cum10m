@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Assistant 测试页面</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+           max-width: 1200px; margin: 0 auto; padding: 40px 20px;
+           background: #f5f5f5; }
+    h1 { color: #333; margin-bottom: 30px; }
+    .section { background: white; padding: 30px; margin-bottom: 30px;
+                border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    h2 { color: #555; font-size: 18px; margin-bottom: 15px; }
+    .test-case { margin-bottom: 20px; padding: 15px; border: 1px solid #e0e0e0;
+                  border-radius: 6px; }
+    .test-case:hover { background: #fafafa; }
+    button {
+      padding: 10px 20px; background: #4CAF50; color: white; border: none;
+      border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 10px; 
+    }
+    button:hover { background: #45a049; }
+    button.test { background: #2196F3; }
+    button.test:hover { background: #0b7dda; }
+    input[type="text"] { padding: 10px; border: 1px solid #ddd; border-radius: 4px;
+                             width: 300px; margin-right: 10px; }
+    select { padding: 10px; border: 1px solid #ddd; border-radius: 4px;
+              margin-right: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { padding: 12px; text-align: left; border: 1px solid #ddd; }
+    th { background: #f5f5f5; font-weight: 600; }
+    .result { background: #f0f0f0; padding: 15px; border-radius: 4px;
+              margin-top: 10px; font-family: monospace; min-height: 40px; }
+    .success { background: #d4edda; color: #155724; }
+    .error { background: #f8d7da; color: #721c24; }
+  </style>
+</head>
+<body>
+  <h1>🧪 AI Browser Assistant 测试页面</h1>
+
+  <div class="section">
+    <h2>1. 基本交互测试</h2>
+    <div class="test-case">
+      <label>输入测试：</label>
+      <input type="text" id="test-input" placeholder="测试输入框">
+      <button onclick="document.getElementById('test-input').value = '测试内容'">
+        填入内容
+      </button>
+      <button onclick="document.getElementById('test-input').value = ''">
+        清空
+      </button>
+    </div>
+    <div class="test-case">
+      <label>按钮测试：</label>
+      <button id="test-btn" onclick="alert('按钮被点击了！')">
+        测试按钮
+      </button>
+      <button onclick="console.log('日志输出')">
+        输出日志
+      </button>
+    </div>
+    <div class="test-case">
+      <label>下拉框测试：</label>
+      <select id="test-select">
+        <option value="">请选择...</option>
+        <option value="1">选项 1</option>
+        <option value="2">选项 2</option>
+        <option value="3">选项 3</option>
+      </select>
+      <button onclick="document.getElementById('test-select').value = '2'">
+        选择选项 2
+      </button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>2. 表格测试</h2>
+    <div class="test-case">
+      <table id="test-table">
+        <thead>
+          <tr>
+            <th>姓名</th>
+            <th>年龄</th>
+            <th>城市</th>
+            <th>职业</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>张三</td>
+            <td>25</td>
+            <td>北京</td>
+            <td>工程师</td>
+          </tr>
+          <tr>
+            <td>李四</td>
+            <td>30</td>
+            <td>上海</td>
+            <td>设计师</td>
+          </tr>
+          <tr>
+            <td>王五</td>
+            <td>28</td>
+            <td>广州</td>
+            <td>产品经理</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>3. 表单测试</h2>
+    <form id="test-form" onsubmit="event.preventDefault(); alert('表单已提交！');">
+      <div class="test-case">
+        <label>用户名：</label>
+        <input type="text" id="username" placeholder="请输入用户名">
+      </div>
+      <div class="test-case">
+        <label>邮箱：</label>
+        <input type="email" id="email" placeholder="请输入邮箱">
+      </div>
+      <div class="test-case">
+        <label>备注：</label>
+        <textarea id="comment" rows="3" style="width: 300px; padding: 10px;
+                                              border: 1px solid #ddd; border-radius: 4px;"></textarea>
+      </div>
+      <div class="test-case">
+        <button type="submit">提交表单</button>
+        <button type="reset">重置表单</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="section">
+    <h2>4. 导航测试</h2>
+    <div class="test-case">
+      <button onclick="window.scrollTo(0, 0)">回到顶部</button>
+      <button onclick="window.scrollTo(0, document.body.scrollHeight)">
+        滚动到底部
+      </button>
+      <button onclick="window.scrollBy(0, 300)">向下滚动</button>
+      <button onclick="history.back()">后退</button>
+      <button onclick="location.reload()">刷新页面</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>5. 信息提取测试</h2>
+    <div class="test-case">
+      <h3>示例标题</h3>
+      <p>这是一段示例文本，用于测试内容提取功能。
+      AI 助手应该能够正确抓取这些文本内容。</p>
+      <p>第二段文本，包含<strong>关键词</strong>和<em>强调内容</em>。</p>
+      <ul>
+        <li>列表项 1</li>
+        <li>列表项 2</li>
+        <li>列表项 3</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>6. 搜索框测试（模拟）</h2>
+    <div class="test-case">
+      <label>搜索：</label>
+      <input type="text" id="search-input" placeholder="输入搜索关键词">
+      <span id="search-btn" onclick="document.getElementById('search-result').textContent =
+          '搜索结果：' + document.getElementById('search-input').value"
+            style="padding: 10px 20px; background: #2196F3; color: white; border-radius: 4px; cursor: pointer;
+            display: inline-block;">搜索</span>
+      <div id="search-result" class="result"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>7. 帮助信息</h2>
+    <div style="background: #e3f2fd; padding: 15px; border-radius: 4px;">
+      <h3>📋 AI 助手测试用例</h3>
+      <p>你可以用这些命令测试 AI 助手：</p>
+      <ul style="margin-left: 20px; line-height: 1.8;">
+        <li>"帮我填入测试内容" - 测试输入框填写</li>
+        <li>"点击测试按钮" - 测试按钮点击</li>
+        <li>"获取表格数据" - 测试表格提取</li>
+        <li>"滚动到页面底部" - 测试页面滚动</li>
+        <li>"提取页面文本" - 测试文本提取</li>
+        <li>"填写表单，用户名：张三，邮箱：test@example.com" - 测试表单提交</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>8. 实时状态</h2>
+    <div id="status-area" style="padding: 15px; background: #f0f0f0; border-radius: 4px;
+                               font-family: monospace;">
+      等待 AI 助手交互...
+    </div>
+    <button onclick="updateStatus()" style="margin-top: 10px;">
+      更新状态
+    </button>
+  </div>
+
+  <script>
+    // 更新状态
+    function updateStatus() {
+      const status = {
+        url: window.location.href,
+        title: document.title,
+        timestamp: new Date().toLocaleString('zh-CN'),
+        hasInputs: document.querySelectorAll('input, textarea').length,
+        hasButtons: document.querySelectorAll('button').length,
+        hasTables: document.querySelectorAll('table').length,
+        scrollPosition: window.scrollY,
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight
+        }
+      };
+      document.getElementById('status-area').innerHTML = 
+        '<pre style="margin:0">' + JSON.stringify(status, null, 2) + '</pre>';
+    }
+
+    // 初始化状态
+    updateStatus();
+
+    // 监听页面变化
+    window.addEventListener('scroll', (e) => {
+      console.log('页面位置变化:', window.scrollY);
+    });
+
+    console.log('🧪 测试页面已加载');
+  </script>
+</body>
+</html>
