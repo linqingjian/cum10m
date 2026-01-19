@@ -34,7 +34,7 @@ export class AIClient {
    */
   async loadConfig() {
     const config = await storage.getMany(['apiUrl', 'apiToken', 'model']);
-    this.config.apiUrl = config.apiUrl || 'https://model-router.meitu.com/v1/chat/completions';
+    this.config.apiUrl = config.apiUrl || 'https://model-router.meitu.com/v1';
     this.config.apiToken = config.apiToken || '';
     this.config.model = config.model || 'gpt-4o';
   }

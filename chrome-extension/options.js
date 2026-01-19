@@ -25,7 +25,7 @@ const elements = {
 
 // 默认配置
 const DEFAULT_CONFIG = {
-  apiUrl: 'https://model-router.meitu.com/v1/chat/completions',
+  apiUrl: 'https://model-router.meitu.com/v1',
   apiToken: '',
   model: 'gpt-4o',
   webhookUrl: '',
