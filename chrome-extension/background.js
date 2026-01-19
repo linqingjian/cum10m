@@ -72,6 +72,14 @@ async function loadConfigFromStorage() {
   });
 }
 
+function withTimeout(promise, ms) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
 async function autoDismissBlockingDialogs(tabId) {
   if (!tabId) return { dismissed: false };
   try {
@@ -492,6 +500,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       request.weeklyReportRootPageId || WEEKLY_REPORT_ROOT_PAGE_ID,
       {
         showPlan: !!request.showPlan,
+        includePageContext: request.includePageContext !== false,
         attachments: Array.isArray(request.attachments) ? request.attachments : [],
         allowImages: !!request.allowImages,
         contextText: request.contextText || ''
@@ -631,6 +640,7 @@ async function startTask(task, model, options = {}) {
   addLog(`📝 构建系统提示词...`, 'action');
   const systemPrompt = buildSystemPrompt(task, options.contextText || '');
   addLog(`✅ 系统提示词构建完成`, 'success');
+  addLog(`✅ 已加载技能库: ${SKILLS_DOC.split('\n')[0]}`, 'info');
   
   let messages = [
     { role: 'system', content: systemPrompt }
@@ -1037,9 +1047,12 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
   
   // 获取当前浏览器页面信息（快速获取，不阻塞对话）
   let pageInfo = null;
+  let pageContextSummary = null;
+  let activeTabId = null;
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (activeTab && activeTab.url && !activeTab.url.startsWith('chrome://') && !activeTab.url.startsWith('chrome-extension://')) {
+      activeTabId = activeTab.id;
       // 先获取基本信息
       pageInfo = {
         url: activeTab.url,
@@ -1052,6 +1065,42 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
   } catch (error) {
     console.warn('⚠️ 获取当前标签页失败:', error.message);
     // 继续执行，不阻塞对话
+  }
+
+  if (options.includePageContext !== false && activeTabId) {
+    try {
+      const summary = await withTimeout(getPageInfoSummary(activeTabId), 1500);
+      if (summary?.success) {
+        const trimText = (value) => String(value || '').trim().slice(0, 80);
+        pageContextSummary = {
+          url: summary.url,
+          title: summary.title,
+          clickables: (summary.clickables || []).slice(0, 8).map(item => ({
+            index: item.index,
+            tag: item.tag,
+            text: trimText(item.text),
+            selector: item.selector
+          })),
+          inputs: (summary.inputs || []).slice(0, 8).map(item => ({
+            index: item.index,
+            tag: item.tag,
+            type: item.type,
+            placeholder: trimText(item.placeholder),
+            selector: item.selector
+          })),
+          scrollables: (summary.scrollables || []).slice(0, 5).map(item => ({
+            index: item.index,
+            tag: item.tag,
+            selector: item.selector,
+            scrollHeight: item.scroll?.scrollHeight || 0,
+            clientHeight: item.scroll?.clientHeight || 0
+          }))
+        };
+        console.log('✅ 已同步页面上下文');
+      }
+    } catch (error) {
+      console.warn('⚠️ 获取页面上下文失败:', error.message);
+    }
   }
   
   try {
@@ -1294,6 +1343,10 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
       ? `\n**最近对话上下文**（请结合理解用户目标与约束）：\n${clippedContext}\n`
       : '';
 
+    const pageContextBlock = pageContextSummary
+      ? `\n**当前页面元素快照**（用于辅助回答）：\n${JSON.stringify(pageContextSummary, null, 2)}\n`
+      : '';
+
     let finalPrompt = `你是美图公司数仓团队的 AI 助手 "数仓小助手"。
 
 你的主人是蔺清建（linqingjian@meitu.com），数仓工程师，负责 RoboNeo、外采成本、素材中台、活跃宽表。
@@ -1308,6 +1361,8 @@ ${pageInfo ? `
 你可以根据当前页面内容帮助用户分析页面、填写表单、点击按钮等。
 
 ` : ''}
+
+${pageContextBlock}
 
 ${confluenceResults && confluenceResults.length > 0 ? `
 用户问题：${message}

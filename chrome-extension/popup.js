@@ -222,7 +222,7 @@ let resultSection, resultIcon, resultTitle, resultContent;
 // 聊天相关元素
 let chatMessages, chatInput, chatSendBtn, chatStatus;
 let chatTab, logsTab;
-let chatModeSelect, chatShowPlanToggle;
+let chatModeSelect, chatShowPlanToggle, chatIncludePageContextToggle;
 let pinBtn, pauseBtn, resumeBtn, cancelBtn;
 let attachBtn, screenshotBtn, fileInput, attachmentBar;
 
@@ -390,6 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
   logsTab = document.querySelector('[data-tab="logs"]');
   chatModeSelect = document.getElementById('chatMode');
   chatShowPlanToggle = document.getElementById('chatShowPlan');
+  chatIncludePageContextToggle = document.getElementById('chatIncludePageContext');
   pinBtn = document.getElementById('pinBtn');
   pauseBtn = document.getElementById('pauseBtn');
   resumeBtn = document.getElementById('resumeBtn');
@@ -758,6 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const mode = chatModeSelect?.value || 'chat';
       const showPlan = !!chatShowPlanToggle?.checked;
+      const includePageContext = chatIncludePageContextToggle ? !!chatIncludePageContextToggle.checked : true;
       const attachments = pendingAttachments.slice(0);
       const contextText = buildContextText(12);
 
@@ -768,6 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
           model: model.value || 'gpt-4o-mini',
           weeklyReportRootPageId: weeklyReportRootPageId?.value || null,
           showPlan: showPlan,
+          includePageContext: includePageContext,
           attachments: attachments,
           allowImages: isImageCapableModel(model.value || 'gpt-4o-mini'),
           contextText: contextText
