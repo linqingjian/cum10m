@@ -45,6 +45,7 @@
     "48": "icon48.png",
     "128": "icon128.png"
   },
+  "update_url": "https://linqingjian.github.io/cum10m/extension/update_manifest.xml",
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true

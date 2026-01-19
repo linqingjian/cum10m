@@ -26,6 +26,8 @@ AI 驱动的浏览器自动化工具，使用你自己的大模型 token 操控�
 2. 选择 `chrome-extension` 文件夹
 3. 扩展会出现在扩展列表中
 
+> ⚠️ 说明：开发者模式加载（unpacked）无法自动更新。若需要一键更新，请使用下方的「自托管 CRX 更新」方式安装。
+
 ### 步骤 4: 固定扩展
 
 1. 点击 Chrome 工具栏的拼图图标 🧩
@@ -117,6 +119,53 @@ AI 返回操作指令 (JSON)
 - 支持页面分析、自动化操作
 - 支持 SQL 执行和结果获取
 - 支持发送结果到企业微信群
+
+## ♻️ 自托管 CRX 更新（GitHub Pages）
+
+使用自托管 CRX 时，Chrome 会自动检查更新（需通过 CRX 安装）。
+
+### 1) 生成 CRX 与 update_manifest
+
+```bash
+cd /Users/lqj/cum10m
+
+# 第一次会生成 keys/extension.pem（请妥善保存，勿提交）
+./scripts/publish-extension.sh
+```
+
+产物会生成到：
+- `docs/extension/ai-assistant.crx`
+- `docs/extension/update_manifest.xml`
+
+### 2) 配置 GitHub Pages
+
+在 GitHub 仓库设置中启用 Pages：
+- Source: `main` 分支
+- Folder: `/docs`
+
+对应访问地址（默认）：
+- `https://linqingjian.github.io/cum10m/extension/update_manifest.xml`
+- `https://linqingjian.github.io/cum10m/extension/ai-assistant.crx`
+
+### 3) 安装 CRX（一次性）
+
+从上述 CRX 链接下载并安装。之后 Chrome 会按 `manifest.json` 的 `update_url` 自动更新。
+
+### 4) 发布新版本
+
+每次更新代码后：
+
+```bash
+./scripts/publish-extension.sh
+git add docs/extension/ai-assistant.crx docs/extension/update_manifest.xml
+git commit -m "发布扩展更新"
+git push origin main
+```
+
+### 关键说明
+
+- **扩展 ID 由私钥决定**，请务必保留 `keys/extension.pem`
+- 如果更换私钥，扩展 ID 会变化，需要重新安装
 
 ---
 

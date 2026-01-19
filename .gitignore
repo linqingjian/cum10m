@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+
+# Extension packaging
+keys/
+dist/
+*.pem
+*.crx
+!docs/extension/*.crx
+
+# Local overrides
+.env
