@@ -28,6 +28,15 @@ AI 驱动的浏览器自动化工具，使用你自己的大模型 token 操控�
 
 > ⚠️ 说明：开发者模式加载（unpacked）无法自动更新。若需要一键更新，请使用下方的「自托管 CRX 更新」方式安装。
 
+## 🔄 手动更新（unpacked 模式）
+
+```bash
+cd /Users/lqj/cum10m
+./scripts/update-unpacked.sh
+```
+
+脚本会执行 `git pull`，并自动打开 `chrome://extensions/`。随后手动点击“重新加载”。
+
 ### 步骤 4: 固定扩展
 
 1. 点击 Chrome 工具栏的拼图图标 🧩
