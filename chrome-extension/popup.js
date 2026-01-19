@@ -223,6 +223,7 @@ let resultSection, resultIcon, resultTitle, resultContent;
 let chatMessages, chatInput, chatSendBtn, chatStatus;
 let chatTab, logsTab;
 let chatModeSelect, chatShowPlanToggle, chatIncludePageContextToggle;
+let chatSyncPageButton;
 let pinBtn, pauseBtn, resumeBtn, cancelBtn;
 let attachBtn, screenshotBtn, fileInput, attachmentBar;
 
@@ -391,6 +392,7 @@ document.addEventListener('DOMContentLoaded', () => {
   chatModeSelect = document.getElementById('chatMode');
   chatShowPlanToggle = document.getElementById('chatShowPlan');
   chatIncludePageContextToggle = document.getElementById('chatIncludePageContext');
+  chatSyncPageButton = document.getElementById('chatSyncPage');
   pinBtn = document.getElementById('pinBtn');
   pauseBtn = document.getElementById('pauseBtn');
   resumeBtn = document.getElementById('resumeBtn');
@@ -917,6 +919,37 @@ document.addEventListener('DOMContentLoaded', () => {
         openSidePanel();
       });
     }
+  }
+
+  if (chatSyncPageButton) {
+    chatSyncPageButton.addEventListener('click', async () => {
+      updateChatStatus('同步页面...', 'thinking');
+      chatSyncPageButton.disabled = true;
+      try {
+        const includePageContext = chatIncludePageContextToggle ? !!chatIncludePageContextToggle.checked : true;
+        const response = await chrome.runtime.sendMessage({
+          type: 'SYNC_PAGE_CONTEXT',
+          includePageContext
+        });
+
+        if (response?.success) {
+          const summary = response.summary || {};
+          const clickCount = summary.clickableCount ?? 0;
+          const inputCount = summary.inputCount ?? 0;
+          const scrollCount = summary.scrollableCount ?? 0;
+          addChatMessage(`✅ 页面已同步（按钮:${clickCount} 输入:${inputCount} 滚动区:${scrollCount}）`, false);
+          updateChatStatus('就绪');
+        } else {
+          addChatMessage(`⚠️ 页面同步失败：${response?.error || '未知错误'}`, false);
+          updateChatStatus('错误', 'error');
+        }
+      } catch (error) {
+        addChatMessage(`⚠️ 页面同步失败：${error.message}`, false);
+        updateChatStatus('错误', 'error');
+      } finally {
+        chatSyncPageButton.disabled = false;
+      }
+    });
   }
 
   if (pauseBtn) {

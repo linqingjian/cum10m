@@ -28,6 +28,7 @@ let lastPageInfo = null; // { clickables: [], inputs: [], ... }
 let taskControl = { paused: false, canceled: false };
 let pauseWaiters = [];
 let activeTaskAbortControllers = new Set();
+let lastPageContextSummary = null;
 
 function normalizeApiUrl(apiUrl) {
   if (!apiUrl) {
@@ -486,6 +487,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ 
       result: lastCompleted?.result || null
     });
+  } else if (request.type === 'SYNC_PAGE_CONTEXT') {
+    syncPageContext()
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
   } else if (request.type === 'CHAT_MESSAGE') {
     // 纯对话模式：直接调用 AI 进行对话，不执行浏览器操作
     // 更新周报根目录页面ID（如果提供了）
@@ -1069,8 +1075,8 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
 
   if (options.includePageContext !== false && activeTabId) {
     try {
-      const summary = await withTimeout(getPageInfoSummary(activeTabId), 1500);
-      if (summary?.success) {
+      const summary = lastPageContextSummary || await withTimeout(getPageInfoSummary(activeTabId), 1500);
+      if (summary?.success || summary?.url) {
         const trimText = (value) => String(value || '').trim().slice(0, 80);
         pageContextSummary = {
           url: summary.url,
@@ -2151,6 +2157,40 @@ async function getPageInfoSummary(tabId) {
     return result[0]?.result || { success: false, error: '获取页面信息失败' };
   } catch (error) {
     console.error('❌ 获取页面信息失败:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+async function syncPageContext() {
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!activeTab?.id || !isOperablePageUrl(activeTab.url)) {
+      return { success: false, error: '未找到可同步的页面' };
+    }
+
+    const summary = await getPageInfoSummary(activeTab.id);
+    if (!summary?.success) {
+      return { success: false, error: summary?.error || '页面同步失败' };
+    }
+
+    const trimmed = {
+      url: summary.url,
+      title: summary.title,
+      clickables: (summary.clickables || []).slice(0, 12),
+      inputs: (summary.inputs || []).slice(0, 12),
+      scrollables: (summary.scrollables || []).slice(0, 8)
+    };
+
+    lastPageContextSummary = trimmed;
+    return {
+      success: true,
+      summary: {
+        clickableCount: summary.clickables?.length || 0,
+        inputCount: summary.inputs?.length || 0,
+        scrollableCount: summary.scrollables?.length || 0
+      }
+    };
+  } catch (error) {
     return { success: false, error: error.message };
   }
 }
