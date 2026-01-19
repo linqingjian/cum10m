@@ -1,7 +1,7 @@
 /**
- * AI Client - AI 客户端
+ * AI Client Module - AI 调用客户端
  *
- * 与 AI 模型通信的通用接口
+ * 统一处理与 AI 模型的交互
  */
 
 import { logger } from './logger.js';
@@ -9,147 +9,170 @@ import { storage, StorageKeys } from './storage.js';
 
 export class AIClient {
   constructor() {
-    this.config = {
-      apiUrl: '',
-      apiToken: '',
-      model: 'gpt-4o',
-    };
-    this.configReady = this.loadConfig();
-
-    storage.onChanged((changes) => {
-      if (changes.apiUrl) {
-        this.config.apiUrl = changes.apiUrl.newValue || this.config.apiUrl;
-      }
-      if (changes.apiToken) {
-        this.config.apiToken = changes.apiToken.newValue || '';
-      }
-      if (changes.model) {
-        this.config.model = changes.model.newValue || this.config.model;
-      }
-    });
-  }
-
-  /**
-   * 加载配置
-   */
-  async loadConfig() {
-    const config = await storage.getMany(['apiUrl', 'apiToken', 'model']);
-    this.config.apiUrl = config.apiUrl || 'https://model-router.meitu.com/v1';
-    this.config.apiToken = config.apiToken || '';
-    this.config.model = config.model || 'gpt-4o';
-  }
-
-  /**
-   * 调用 AI
-   */
-  async chat(messages, options = {}) {
-    await this.configReady;
-
-    if (!this.config.apiToken) {
-      throw new Error('API Token 未配置，请在设置中配置');
-    }
-
-    const { 
-      model = this.config.model,
-      maxTokens = 2000,
-      temperature = 0.7,
-      stream = false
-    } = options;
-
-    logger.debug(`调用 AI: ${messages.length} 条消息`);
-
-    const requestUrl = this.normalizeApiUrl(this.config.apiUrl);
-    const response = await fetch(requestUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiToken}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: maxTokens,
-        temperature,
-        stream,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`AI API 错误 (${response.status}): ${errorText}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-
-    return {
-      content,
-      model: data.model,
-      usage: data.usage,
-      finishReason: data.choices?.[0]?.finish_reason,
-    };
+    this.baseUrl = 'https://model-router.meitu.com/v1';
   }
 
   normalizeApiUrl(apiUrl) {
     if (!apiUrl) {
-      return 'https://model-router.meitu.com/v1/chat/completions';
+      return `${this.baseUrl}/chat/completions`;
     }
 
-    const trimmed = apiUrl.replace(/\/+$/u, '');
+    const trimmed = String(apiUrl).replace(/\/+$/u, '');
     if (trimmed.endsWith('/v1')) {
       return `${trimmed}/chat/completions`;
     }
-
     return trimmed;
   }
 
   /**
-   * 构建系统提示词
+   * 获取配置的 API Token
    */
-  buildSystemPrompt(currentUrl, pageContext) {
-    const baseUrl = currentUrl ? new URL(currentUrl).hostname : 'unknown';
-    
-    return `你是我的 AI 浏览器助手，可以帮我执行各种网页操作任务。
+  async getApiToken() {
+    const token = await storage.get(StorageKeys.CONFIG_API_TOKEN);
+    if (!token) {
+      throw new Error('API Token 未配置，请在插件设置中配置');
+    }
+    return token;
+  }
 
-## 当前环境
-- 网站: ${baseUrl}
-- URL: ${currentUrl || 'N/A'}
-${pageContext ? `- 页面上下文: ${JSON.stringify(pageContext, null, 2)}` : ''}
+  /**
+   * 获取配置的模型
+   */
+  async getModel() {
+    return await storage.get(StorageKeys.CONFIG_MODEL) || 'gpt-4o-mini';
+  }
 
-## 可用操作
-1. **navigate** - 导航到指定 URL
-2. **click** - 点击页面元素（使用 CSS 选择器）
-3. **type** - 在输入框中输入文本
-4. **select** - 选择下拉选项
-5. **wait** - 等待指定时间（毫秒）
-6. **getText** - 获取元素的文本内容
-7. **getTable** - 获取表格数据
-8. **scroll** - 滚动页面（up/down/top/bottom）
-9. **back** - 浏览器后退
-10. **forward** - 浏览器前进
-11. **refresh** - 刷新页面
+  /**
+   * 获取配置的 API URL
+   */
+  async getApiUrl() {
+    return await storage.get(StorageKeys.CONFIG_API_URL) || this.baseUrl;
+  }
 
-## 响应格式
-必须返回纯 JSON，格式如下：
-{
-  "type": "操作类型",
-  "target": "目标选择器或值",
-  "value": "可选的输入值",
-  "thinking": "你的思考过程（简短）",
-  "done": "任务是否完成",
-  "result": "最终结果（done=true 时必填）"
-}
+  /**
+   * 调用 AI 模型
+   */
+  async chat(messages, options = {}) {
+    const {
+      model,
+      maxTokens = 65536,
+      temperature = 0.7,
+      systemPrompt = null,
+    } = options;
 
-## 重要规则
-1. 尽可能减少步骤数量，能一步完成的不要分多步
-2. 如果页面已经是预期状态，直接获取结果
-3. 选择器要尽量精确，避免选择错误的元素
-4. 遇到错误时，尝试恢复或给出明确的错误信息
-5. 不要执行危险操作（如删除、提交重要表单），除非用户明确要求
+    try {
+      const actualModel = model || await this.getModel();
+      const apiToken = await this.getApiToken();
+      const apiUrl = await this.getApiUrl();
+      const requestUrl = this.normalizeApiUrl(apiUrl);
 
-## 示例
-用户: "帮我搜索 Google"
-返回: {"type": "navigate", "target": "https://www.google.com", "thinking": "导航到 Google", "done": false}`;
+      let formattedMessages = [...messages];
+
+      // 如果提供了系统提示词，确保它在最前面
+      if (systemPrompt) {
+        const hasSystem = formattedMessages.some(m => m.role === 'system');
+        if (!hasSystem) {
+          formattedMessages.unshift({ role: 'system', content: systemPrompt });
+        } else {
+          formattedMessages[0] = { role: 'system', content: systemPrompt };
+        }
+      }
+
+      logger.action(`调用模型: ${actualModel}`);
+      logger.debug(`消息数量: ${formattedMessages.length}`);
+
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+          'X-Mtcc-Client': 'ai-assistant-extension',
+        },
+        body: JSON.stringify({
+          model: actualModel,
+          messages: formattedMessages,
+          max_tokens: maxTokens,
+          temperature,
+        }),
+      });
+
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        logger.error(`AI 调用失败 (${response.status}): ${responseText.substring(0, 200)}`);
+        throw new Error(`AI 调用失败 (${response.status}): ${responseText.substring(0, 100)}`);
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        logger.error(`AI 响应解析失败: ${responseText.substring(0, 200)}`);
+        throw new Error(`AI 响应解析失败`);
+      }
+
+      if (!data.choices || !data.choices[0]) {
+        logger.error(`AI 响应格式异常: ${JSON.stringify(data).substring(0, 200)}`);
+        throw new Error(`AI 响应格式异常`);
+      }
+
+      const choice = data.choices[0];
+      const content = choice.message?.content || choice.message?.reasoning_content || '';
+
+      if (!content) {
+        throw new Error(`AI 未返回内容 (finish_reason: ${choice.finish_reason})`);
+      }
+
+      // 检查是否被截断
+      if (choice.finish_reason === 'length') {
+        logger.warn('AI 响应被截断');
+      }
+
+      logger.success('AI 调用成功');
+      return {
+        content,
+        model: actualModel,
+        usage: data.usage,
+        finishReason: choice.finish_reason,
+      };
+
+    } catch (error) {
+      logger.error(`AI 调用异常: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 简化版对话（仅返回文本内容）
+   */
+  async chatSimple(messages, systemPrompt = null) {
+    const result = await this.chat(messages, { systemPrompt });
+    return result.content;
+  }
+
+  /**
+   * 带重试的对话
+   */
+  async chatWithRetry(messages, options = {})
+  {
+    const maxAttempts = options.maxAttempts || 3;
+    const delay = options.delay || 1000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await this.chat(messages, options);
+      } catch (error) {
+        if (attempt === maxAttempts) {
+          throw error;
+        }
+        logger.warn(`第 ${attempt} 次调用失败，${delay}ms 后重试...`);
+        await this.sleep(delay);
+      }
+    }
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
 

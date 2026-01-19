@@ -1,16 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "AI Browser Assistant",
-  "version": "2.0.0",
-  "description": "AI驱动的通用浏览器助手，可操作任意网页",
+  "name": "数仓小助手",
+  "version": "1.0.0",
+  "description": "AI 驱动的数仓助手，自动操作神舟平台",
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
     "tabs",
-    "sidePanel",
-    "webNavigation",
-    "notifications"
+    "sidePanel"
   ],
   "host_permissions": [
     "https://*/*",
@@ -28,20 +26,18 @@
     }
   },
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
+      "matches": ["https://shenzhou.tatstm.com/*"],
+      "js": ["content.js"]
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["injected_script.js", "injected_script.html"],
-      "matches": ["<all_urls>"]
+      "resources": ["injected_script.js", "chat_ui.js"],
+      "matches": ["https://shenzhou.tatstm.com/*"]
     }
   ],
   "icons": {
