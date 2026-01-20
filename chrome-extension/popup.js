@@ -1210,13 +1210,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   async function sendChatMessage() {
-    const question = chatInput.value.trim();
-    if (!question) return;
-    
+    let question = chatInput.value.trim();
+    if (!question && (!pendingAttachments || pendingAttachments.length === 0)) return;
+
     console.log('📤 发送聊天消息:', question);
     
     // 清空输入框
     chatInput.value = '';
+
+    if (!question && pendingAttachments && pendingAttachments.length > 0) {
+      const hasImage = pendingAttachments.some(att => att.kind === 'image');
+      question = hasImage ? '请结合图片回答' : '请结合附件回答';
+    }
     
     // 添加用户消息
     addChatMessage(question, true);
@@ -1468,6 +1473,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (imageItems.length === 0) return;
 
       e.preventDefault();
+      try {
+        const plainText = e.clipboardData?.getData('text/plain');
+        if (plainText) {
+          const start = chatInput.selectionStart ?? chatInput.value.length;
+          const end = chatInput.selectionEnd ?? chatInput.value.length;
+          chatInput.value = `${chatInput.value.slice(0, start)}${plainText}${chatInput.value.slice(end)}`;
+          const cursor = start + plainText.length;
+          chatInput.setSelectionRange(cursor, cursor);
+        }
+      } catch (e) {
+        // ignore
+      }
       for (const item of imageItems) {
         const file = item.getAsFile();
         if (!file) continue;
