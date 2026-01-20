@@ -7,6 +7,7 @@ const readStoredValue = (result, key) => {
   return result[prefixed] ?? result[key];
 };
 const CUSTOM_SKILLS_STORAGE_KEY = storageKey('customSkills');
+const DEFAULT_API_URL = 'https://model-router.meitu.com/v1';
 
 // 系统提示词 - 整合完整 Skills
 const SYSTEM_PROMPT = `你是美图公司数仓团队的 AI 助手 "数仓小助手"，负责在神舟大数据平台上执行数据查询和任务管理。
@@ -217,7 +218,7 @@ ORDER BY
 
 // DOM 元素
 let statusBar, taskInput, executeBtn, sendBtn, outputArea;
-let apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId;
+let apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId;
 let verboseLogsToggle;
 let resultSection, resultIcon, resultTitle, resultContent;
 // 聊天相关元素
@@ -550,6 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
   clearLogsBtn = document.getElementById('clearLogsBtn');
   outputArea = document.getElementById('outputArea');
   apiToken = document.getElementById('apiToken');
+  apiUrl = document.getElementById('apiUrl');
   confluenceToken = document.getElementById('confluenceToken');
   weeklyReportRootPageId = document.getElementById('weeklyReportRootPageId');
   
@@ -599,8 +601,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // 加载保存的配置
-  const configKeys = ['apiToken', 'model', 'webhookUrl', 'confluenceToken', 'weeklyReportRootPageId', 'verboseLogs'];
+  const configKeys = ['apiUrl', 'apiToken', 'model', 'webhookUrl', 'confluenceToken', 'weeklyReportRootPageId', 'verboseLogs'];
   chrome.storage.local.get(configKeys.flatMap(key => [key, storageKey(key)]), (result) => {
+    const apiUrlValue = readStoredValue(result, 'apiUrl');
     const apiTokenValue = readStoredValue(result, 'apiToken');
     const modelValue = readStoredValue(result, 'model');
     const webhookValue = readStoredValue(result, 'webhookUrl');
@@ -608,6 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const weeklyRootValue = readStoredValue(result, 'weeklyReportRootPageId');
     const verboseLogsValue = readStoredValue(result, 'verboseLogs');
 
+    if (apiUrl) apiUrl.value = apiUrlValue || DEFAULT_API_URL;
     if (apiTokenValue) apiToken.value = apiTokenValue;
     if (modelValue) model.value = modelValue;
     if (webhookValue) webhookUrl.value = webhookValue;
@@ -628,7 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (skillCancelBtn) skillCancelBtn.addEventListener('click', resetSkillForm);
   
   // 保存配置
-  [apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId, verboseLogsToggle].forEach(el => {
+  [apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId, verboseLogsToggle].forEach(el => {
     if (el) el.addEventListener('change', saveConfig);
   });
   
@@ -1460,7 +1464,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function saveConfig() {
+  const apiUrlValue = apiUrl?.value?.trim();
   const config = {
+    apiUrl: apiUrlValue || DEFAULT_API_URL,
     apiToken: apiToken.value,
     model: model.value,
     webhookUrl: webhookUrl.value,
