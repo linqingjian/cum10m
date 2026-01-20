@@ -30,6 +30,7 @@ let taskControl = { paused: false, canceled: false };
 let pauseWaiters = [];
 let activeTaskAbortControllers = new Set();
 let lastPageContextSummary = null;
+const SCREENSHOT_REQUEST_TOKEN = '[[NEED_SCREENSHOT]]';
 
 function normalizeApiUrl(apiUrl) {
   if (!apiUrl) {
@@ -331,6 +332,46 @@ function looksLikeTaskLogicInspection(userTask) {
   const wantsLogic = /逻辑|SQL|脚本|代码|编辑|开发|依赖|DAG/.test(t);
   const name = extractTaskNameFromQuery(t);
   return { ok: hasTaskWord && wantsLogic, name };
+}
+
+function responseRequestsScreenshot(text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return false;
+  if (trimmed === SCREENSHOT_REQUEST_TOKEN) return true;
+  const withoutToken = trimmed.replace(SCREENSHOT_REQUEST_TOKEN, '').trim();
+  return withoutToken.length === 0;
+}
+
+async function captureActiveTabScreenshot() {
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!activeTab?.id) {
+      return { success: false, error: '未找到当前标签页' };
+    }
+    const url = String(activeTab.url || '');
+    if (!isOperablePageUrl(url) || url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
+      return { success: false, error: '当前页面不支持截图' };
+    }
+
+    const dataUrl = await new Promise((resolve, reject) => {
+      chrome.tabs.captureVisibleTab(activeTab.windowId, { format: 'png' }, (capturedUrl) => {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+        resolve(capturedUrl);
+      });
+    });
+
+    if (!dataUrl || typeof dataUrl !== 'string') {
+      return { success: false, error: '截图失败：未获取到图像' };
+    }
+
+    if (dataUrl.length > 1_600_000) {
+      return { success: false, error: '截图过大，建议缩小窗口或局部截图后重试' };
+    }
+
+    return { success: true, dataUrl };
+  } catch (error) {
+    return { success: false, error: error.message || '截图失败' };
+  }
 }
 
 async function findBestShenzhouTab() {
@@ -1495,8 +1536,26 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
     const pageContextBlock = pageContextSummary
       ? `\n**当前页面元素快照**（用于辅助回答）：\n${JSON.stringify(pageContextSummary, null, 2)}\n`
       : '';
+    const planHint = options.showPlan
+      ? '- 在回复末尾追加一段【思路】（3-6条要点），只写高层步骤/计划，不要输出模型隐含推理细节'
+      : '';
+    const canSendImages = !!options.allowImages && (String(model || '').toLowerCase().includes('gpt-4o') || String(model || '').toLowerCase().includes('gpt-5'));
+    const screenshotHintLine = canSendImages
+      ? `- 如果需要当前页面截图才能回答，请只回复一行：${SCREENSHOT_REQUEST_TOKEN}（不要添加其他文字）`
+      : '';
 
-    let finalPrompt = `你是美图公司数仓团队的 AI 助手 "数仓小助手"。
+    const buildFinalPrompt = (includeScreenshotHint = true) => {
+      const importantLines = [
+        '- 只返回纯文本回复，不要调用任何函数',
+        '- 不要使用 function call 格式（如 call:confluence_search{...}）',
+        '- 不要返回 JSON 格式的操作指令',
+        '- 直接用中文回答用户的问题',
+        '- 如果包含代码/SQL/脚本，请使用 Markdown 代码块并标注语言（例如：sql 代码块）'
+      ];
+      if (includeScreenshotHint && screenshotHintLine) importantLines.push(screenshotHintLine);
+      if (planHint) importantLines.push(planHint);
+
+      return `你是美图公司数仓团队的 AI 助手 "数仓小助手"。
 
 你的主人是蔺清建（linqingjian@meitu.com），数仓工程师，负责 RoboNeo、外采成本、素材中台、活跃宽表。
 
@@ -1556,48 +1615,50 @@ ${confluenceResults.map((page, index) => {
 请用友好、专业的语气直接回答用户的问题。`}
 
 **重要**：
-- 只返回纯文本回复，不要调用任何函数
-- 不要使用 function call 格式（如 call:confluence_search{...}）
-- 不要返回 JSON 格式的操作指令
-- 直接用中文回答用户的问题
-- 如果包含代码/SQL/脚本，请使用 Markdown 代码块并标注语言（例如：sql 代码块）
-${options.showPlan ? '- 在回复末尾追加一段【思路】（3-6条要点），只写高层步骤/计划，不要输出模型隐含推理细节' : ''}`;
+${importantLines.join('\n')}`;
+    };
 
-    // 处理附件：文本内容注入到用户消息；图片在允许且尺寸可控时以 image_url 形式附加（路由不支持会失败，再降级）
-    const attachments = Array.isArray(options.attachments) ? options.attachments : [];
-    const textAttachments = attachments
-      .filter(a => a && a.kind === 'text' && typeof a.text === 'string' && a.text.trim().length > 0)
-      .slice(0, 3)
-      .map(a => {
-        const name = String(a.name || 'untitled').slice(0, 80);
-        const text = a.text.length > 40000 ? `${a.text.slice(0, 40000)}\n\n[内容已截断]` : a.text;
-        return `【附件：${name}】\n${text}`;
-      });
+    const buildUserContent = (baseMessage, attachmentsList, extraImages = []) => {
+      const attachments = Array.isArray(attachmentsList) ? attachmentsList : [];
+      const textAttachments = attachments
+        .filter(a => a && a.kind === 'text' && typeof a.text === 'string' && a.text.trim().length > 0)
+        .slice(0, 3)
+        .map(a => {
+          const name = String(a.name || 'untitled').slice(0, 80);
+          const text = a.text.length > 40000 ? `${a.text.slice(0, 40000)}\n\n[内容已截断]` : a.text;
+          return `【附件：${name}】\n${text}`;
+        });
 
-    const imageAttachments = attachments
-      .filter(a => a && a.kind === 'image' && typeof a.dataUrl === 'string' && a.dataUrl.startsWith('data:image/'))
-      .slice(0, 2);
+      const imageAttachments = attachments
+        .filter(a => a && a.kind === 'image' && typeof a.dataUrl === 'string' && a.dataUrl.startsWith('data:image/'));
+      const combinedImages = [...extraImages, ...imageAttachments]
+        .filter(img => img && typeof img.dataUrl === 'string' && img.dataUrl.startsWith('data:image/'))
+        .slice(0, 2);
 
-    const baseUserText = textAttachments.length > 0
-      ? `${message}\n\n用户提供的附件内容如下（可用于理解上下文）：\n\n${textAttachments.join('\n\n')}`
-      : message;
+      const baseUserText = textAttachments.length > 0
+        ? `${baseMessage}\n\n用户提供的附件内容如下（可用于理解上下文）：\n\n${textAttachments.join('\n\n')}`
+        : baseMessage;
 
-    let userContent = baseUserText;
-    const canSendImages = !!options.allowImages && (String(model || '').toLowerCase().includes('gpt-4o') || String(model || '').toLowerCase().includes('gpt-5'));
-    if (canSendImages && imageAttachments.length > 0) {
-      const parts = [{ type: 'text', text: baseUserText }];
-      for (const img of imageAttachments) {
-        // 简单尺寸保护：dataUrl 太长会导致请求失败
-        if (img.dataUrl.length > 1_600_000) continue;
-        parts.push({ type: 'image_url', image_url: { url: img.dataUrl } });
+      if (canSendImages && combinedImages.length > 0) {
+        const parts = [{ type: 'text', text: baseUserText }];
+        for (const img of combinedImages) {
+          if (img.dataUrl.length > 1_600_000) continue;
+          parts.push({ type: 'image_url', image_url: { url: img.dataUrl } });
+        }
+        return parts;
       }
-      userContent = parts;
-    } else if (imageAttachments.length > 0) {
-      // 不支持图片时，给出占位提示
-      const names = imageAttachments.map(a => String(a.name || 'image')).join(', ');
-      userContent = `${baseUserText}\n\n（用户还提供了图片附件：${names}。如果你无法直接理解图片，请提示用户描述图片内容或提供文字信息。）`;
-    }
 
+      if (combinedImages.length > 0) {
+        const names = combinedImages.map(a => String(a.name || 'image')).join(', ');
+        return `${baseUserText}\n\n（用户还提供了图片附件：${names}。如果你无法直接理解图片，请提示用户描述图片内容或提供文字信息。）`;
+      }
+
+      return baseUserText;
+    };
+
+    const attachments = Array.isArray(options.attachments) ? options.attachments : [];
+    const finalPrompt = buildFinalPrompt(true);
+    const userContent = buildUserContent(message, attachments);
     const finalMessages = [
       { role: 'system', content: finalPrompt },
       { role: 'user', content: userContent }
@@ -1605,15 +1666,44 @@ ${options.showPlan ? '- 在回复末尾追加一段【思路】（3-6条要点�
     
     console.log('🤖 调用 AI 生成回复，超时时间: 60秒');
     try {
-      // 使用60秒超时，避免等待太久
       const timeout = 60000; // 60秒
-      console.log('📤 发送消息到 AI，消息数量:', finalMessages.length);
-      const response = await callAI(finalMessages, model, timeout, { max_tokens: 1800, temperature: 0.2 });
+      const callChatModel = async (messages) => {
+        console.log('📤 发送消息到 AI，消息数量:', messages.length);
+        return callAI(messages, model, timeout, { max_tokens: 1800, temperature: 0.2 });
+      };
+
+      const response = await callChatModel(finalMessages);
       console.log('✅ AI 回复生成成功，长度:', response?.length || 0);
       
       if (!response || response.trim().length === 0) {
         throw new Error('AI 返回了空响应');
       }
+
+      if (responseRequestsScreenshot(response)) {
+        if (!canSendImages) {
+          return '当前模型不支持图片输入，无法自动截图。请切换到支持图片的模型，或手动上传截图。';
+        }
+
+        const screenshot = await captureActiveTabScreenshot();
+        if (!screenshot.success) {
+          return `需要截图但未成功：${screenshot.error || '截图失败'}。你也可以手动上传或粘贴截图。`;
+        }
+
+        const followupPrompt = `${buildFinalPrompt(false)}\n\n（已获取当前页面截图，请直接基于截图回答。）`;
+        const screenshotAttachment = { kind: 'image', name: 'auto-screenshot.png', dataUrl: screenshot.dataUrl };
+        const followupUserContent = buildUserContent(message, attachments, [screenshotAttachment]);
+        const followupMessages = [
+          { role: 'system', content: followupPrompt },
+          { role: 'user', content: followupUserContent }
+        ];
+
+        const followupResponse = await callChatModel(followupMessages);
+        if (responseRequestsScreenshot(followupResponse)) {
+          return '已提供截图，但仍无法判断。请描述你希望我关注的区域或补充问题细节。';
+        }
+        return followupResponse;
+      }
+
       return response;
     } catch (error) {
       // 如果 AI 调用失败（如 function call 被拒绝），但已有搜索结果，生成默认回复
