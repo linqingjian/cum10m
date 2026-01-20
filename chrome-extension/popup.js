@@ -1039,6 +1039,11 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab) throw new Error('未找到当前标签页');
+      const tabUrl = String(tab.url || '');
+      if (!tabUrl || tabUrl.startsWith('chrome://') || tabUrl.startsWith('chrome-extension://') || tabUrl.startsWith('about:')) {
+        addChatMessage('当前页面不支持截图（如 chrome:// 或扩展页）。请切换到普通网页后再试，或直接粘贴截图。', false);
+        return;
+      }
       const dataUrl = await new Promise((resolve, reject) => {
         chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }, (url) => {
           if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
@@ -1058,7 +1063,12 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       renderAttachments();
     } catch (e) {
-      addChatMessage(`截图失败：${e.message}`, false);
+      const msg = e?.message || String(e);
+      if (msg.includes('<all_urls>') || msg.includes('activeTab')) {
+        addChatMessage('截图失败：权限不足。请先在扩展管理页点“重新加载扩展”，并确保当前是普通网页；或使用粘贴截图/附件上传。', false);
+        return;
+      }
+      addChatMessage(`截图失败：${msg}`, false);
     }
   }
 

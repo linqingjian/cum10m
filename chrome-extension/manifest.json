@@ -11,8 +11,7 @@
     "sidePanel"
   ],
   "host_permissions": [
-    "https://*/*",
-    "http://*/*"
+    "<all_urls>"
   ],
   "side_panel": {
     "default_path": "popup.html"
