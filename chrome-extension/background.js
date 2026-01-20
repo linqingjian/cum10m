@@ -250,6 +250,52 @@ function isOperablePageUrl(url) {
   return !!url && (url.startsWith('http://') || url.startsWith('https://'));
 }
 
+function waitForTabComplete(tabId, timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      try {
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+      } catch (e) {
+        // ignore
+      }
+      clearTimeout(timer);
+      resolve(result);
+    };
+
+    const onUpdated = (updatedTabId, info) => {
+      if (updatedTabId !== tabId) return;
+      if (info && info.status === 'complete') {
+        finish({ ok: true, status: 'complete' });
+      }
+    };
+
+    const timer = setTimeout(() => {
+      finish({ ok: false, status: 'timeout' });
+    }, timeoutMs);
+
+    try {
+      chrome.tabs.onUpdated.addListener(onUpdated);
+    } catch (e) {
+      finish({ ok: false, status: 'listener_error' });
+      return;
+    }
+
+    try {
+      chrome.tabs.get(tabId, (tab) => {
+        if (chrome.runtime.lastError) return;
+        if (tab && tab.status === 'complete') {
+          finish({ ok: true, status: 'complete' });
+        }
+      });
+    } catch (e) {
+      // ignore
+    }
+  });
+}
+
 const DESTRUCTIVE_KEYWORDS = [
   '删除',
   '清空',
@@ -790,7 +836,8 @@ async function startTask(task, model, options = {}) {
       currentTabId = newTab.id;
       addLog(`✅ 已创建新标签页并导航，标签页 ID: ${currentTabId}`, 'info');
     }
-    await sleep(1500);
+    const navResult = await waitForTabComplete(currentTabId, 8000);
+    if (!navResult.ok) addLog(`⚠️ 任务列表页面加载超时`, 'warn');
   } else if (needNavigateQuery) {
     addLog(`🌐 检测到查询类任务且当前不在神舟页面，自动打开临时查询页: ${queryUrl}`, 'action');
     if (currentTabId) {
@@ -800,7 +847,8 @@ async function startTask(task, model, options = {}) {
       currentTabId = newTab.id;
       addLog(`✅ 已创建新标签页并导航，标签页 ID: ${currentTabId}`, 'info');
     }
-    await sleep(1500);
+    const navResult = await waitForTabComplete(currentTabId, 8000);
+    if (!navResult.ok) addLog(`⚠️ 临时查询页面加载超时`, 'warn');
   } else {
     addLog(isQueryPage ? '✅ 当前已在临时查询页' : '✅ 当前页面可用，交给 AI 决定是否导航', 'success');
   }
@@ -1543,6 +1591,9 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
     const screenshotHintLine = canSendImages
       ? `- 如果需要当前页面截图才能回答，请只回复一行：${SCREENSHOT_REQUEST_TOKEN}（不要添加其他文字）`
       : '';
+    const pageAwarenessLine = (pageInfo || pageContextSummary)
+      ? '- 已提供页面信息/元素快照，请直接基于它回答，不要说无法查看页面'
+      : '- 如果需要页面视觉信息而当前没有，请按截图规则请求截图';
 
     const buildFinalPrompt = (includeScreenshotHint = true) => {
       const importantLines = [
@@ -1550,7 +1601,8 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
         '- 不要使用 function call 格式（如 call:confluence_search{...}）',
         '- 不要返回 JSON 格式的操作指令',
         '- 直接用中文回答用户的问题',
-        '- 如果包含代码/SQL/脚本，请使用 Markdown 代码块并标注语言（例如：sql 代码块）'
+        '- 如果包含代码/SQL/脚本，请使用 Markdown 代码块并标注语言（例如：sql 代码块）',
+        pageAwarenessLine
       ];
       if (includeScreenshotHint && screenshotHintLine) importantLines.push(screenshotHintLine);
       if (planHint) importantLines.push(planHint);
@@ -3082,7 +3134,8 @@ async function executeAction(action) {
       if (currentTabId) {
         await chrome.tabs.update(currentTabId, { url: url });
         addLog(`✅ 已更新标签页 ${currentTabId} 的 URL`, 'success');
-        await sleep(2000); // 等待页面加载（2秒足够）
+        const navResult = await waitForTabComplete(currentTabId, 8000);
+        if (!navResult.ok) addLog('⚠️ 页面加载超时，继续执行后续步骤', 'warn');
         
         // 验证导航是否成功
         try {
