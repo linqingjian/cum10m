@@ -232,6 +232,8 @@ let skillNameInput, skillDescInput, skillPromptInput, skillSaveBtn, skillCancelB
 
 let pendingAttachments = [];
 let pendingExecAfterCancel = null; // { taskWithAttachments, originalText, preferShenzhou, skillMentions }
+let pendingExecCheckTimer = null;
+let pendingExecRetryCount = 0;
 let chatHistory = []; // [{role, content, ts}]
 let customSkills = [];
 let editingSkillId = null;
@@ -887,6 +889,67 @@ document.addEventListener('DOMContentLoaded', () => {
     chatStatus.className = `chat-status ${type}`;
   }
 
+  function clearPendingExecCheck() {
+    if (pendingExecCheckTimer) {
+      clearTimeout(pendingExecCheckTimer);
+      pendingExecCheckTimer = null;
+    }
+    pendingExecRetryCount = 0;
+  }
+
+  function schedulePendingExecCheck() {
+    clearPendingExecCheck();
+    const check = () => {
+      if (!pendingExecAfterCancel) return;
+      chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (resp) => {
+        if (chrome.runtime.lastError) return;
+        if (resp?.status === 'idle') {
+          kickoffPendingExec(pendingExecAfterCancel);
+          return;
+        }
+        pendingExecRetryCount += 1;
+        if (pendingExecRetryCount < 6) {
+          pendingExecCheckTimer = setTimeout(check, 700);
+        }
+      });
+    };
+    pendingExecCheckTimer = setTimeout(check, 700);
+  }
+
+  function kickoffPendingExec(pending) {
+    if (!pending) return;
+    pendingExecAfterCancel = null;
+    clearPendingExecCheck();
+    updateChatStatus('开始新任务...', 'thinking');
+    chatExecActive = true;
+    chatExecLogs = [];
+    chatExecBubbleEl = createUpdatableBotMessage('收到，我开始在浏览器里执行…\n（执行日志会在这里滚动输出）');
+    chatExecLastFlushTs = 0;
+    if (taskInput) taskInput.value = pending.taskWithAttachments;
+    lastSubmittedTask = pending.originalText;
+    isTaskRunning = true;
+    setTaskControlButtons({ running: true, paused: false });
+    chrome.runtime.sendMessage({
+      type: 'START_TASK',
+      task: pending.taskWithAttachments,
+      model: model.value || 'gpt-4o-mini',
+      confluenceToken: confluenceToken?.value || null,
+      preferShenzhou: pending.preferShenzhou,
+      contextText: buildContextText(12),
+      skillMentions: pending.skillMentions || []
+    }, () => {
+      if (chrome.runtime.lastError) {
+        updateChatStatus('错误', 'error');
+        chatSendBtn && (chatSendBtn.disabled = false);
+        addChatMessage(`自动开始新任务失败：${chrome.runtime.lastError.message}`, false);
+        return;
+      }
+      updateChatStatus('执行中...', 'thinking');
+      startStatusPolling();
+      chatSendBtn && (chatSendBtn.disabled = false);
+    });
+  }
+
   function startChatStream(requestId) {
     chatStreamRequestId = requestId;
     chatStreamBuffer = '';
@@ -1288,6 +1351,9 @@ document.addEventListener('DOMContentLoaded', () => {
             chatSendBtn.disabled = false;
             addChatMessage(`停止任务失败：${chrome.runtime.lastError.message}`, false);
             return;
+          }
+          if (resp && resp.success === true) {
+            schedulePendingExecCheck();
           }
           if (resp && resp.success === false && typeof resp.error === 'string' && resp.error.includes('没有运行中的任务')) {
             // 后台认为没有任务在跑，直接开始
@@ -2193,36 +2259,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       updateChatStatus('就绪');
     }
 
-    if (pendingExecAfterCancel) {
-      const pending = pendingExecAfterCancel;
-      pendingExecAfterCancel = null;
-      // 任务自然完成后，也自动开启排队的新任务
-      try {
-        updateChatStatus('开始新任务...', 'thinking');
-        chatExecActive = true;
-        chatExecLogs = [];
-        chatExecBubbleEl = createUpdatableBotMessage('收到，我开始在浏览器里执行…\n（执行日志会在这里滚动输出）');
-        chatExecLastFlushTs = 0;
-        if (taskInput) taskInput.value = pending.taskWithAttachments;
-        lastSubmittedTask = pending.originalText;
-        isTaskRunning = true;
-        setTaskControlButtons({ running: true, paused: false });
-        chrome.runtime.sendMessage({
-          type: 'START_TASK',
-          task: pending.taskWithAttachments,
-          model: model.value || 'gpt-4o-mini',
-          confluenceToken: confluenceToken?.value || null,
-          preferShenzhou: pending.preferShenzhou,
-          contextText: buildContextText(12),
-          skillMentions: pending.skillMentions || []
-        }, () => {
-          updateChatStatus('执行中...', 'thinking');
-          startStatusPolling();
-        });
-      } catch (e) {
-        addChatMessage(`自动开始新任务失败：${e.message}`, false);
-      }
-    }
+    if (pendingExecAfterCancel) kickoffPendingExec(pendingExecAfterCancel);
   } else if (message.type === 'TASK_ERROR') {
     if (statusPollingInterval) {
       clearInterval(statusPollingInterval);
@@ -2244,36 +2281,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       updateChatStatus('错误', 'error');
     }
 
-    if (pendingExecAfterCancel) {
-      const pending = pendingExecAfterCancel;
-      pendingExecAfterCancel = null;
-      // 任务异常退出后，自动开启排队的新任务
-      try {
-        updateChatStatus('开始新任务...', 'thinking');
-        chatExecActive = true;
-        chatExecLogs = [];
-        chatExecBubbleEl = createUpdatableBotMessage('收到，我开始在浏览器里执行…\n（执行日志会在这里滚动输出）');
-        chatExecLastFlushTs = 0;
-        if (taskInput) taskInput.value = pending.taskWithAttachments;
-        lastSubmittedTask = pending.originalText;
-        isTaskRunning = true;
-        setTaskControlButtons({ running: true, paused: false });
-        chrome.runtime.sendMessage({
-          type: 'START_TASK',
-          task: pending.taskWithAttachments,
-          model: model.value || 'gpt-4o-mini',
-          confluenceToken: confluenceToken?.value || null,
-          preferShenzhou: pending.preferShenzhou,
-          contextText: buildContextText(12),
-          skillMentions: pending.skillMentions || []
-        }, () => {
-          updateChatStatus('执行中...', 'thinking');
-          startStatusPolling();
-        });
-      } catch (e) {
-        addChatMessage(`自动开始新任务失败：${e.message}`, false);
-      }
-    }
+    if (pendingExecAfterCancel) kickoffPendingExec(pendingExecAfterCancel);
   } else if (message.type === 'TASK_PAUSED') {
     updateChatStatus('已暂停', 'thinking');
     setTaskControlButtons({ running: true, paused: true });
@@ -2283,6 +2291,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     setTaskControlButtons({ running: true, paused: false });
     if (chatExecActive) appendChatExecLog('▶️ 已继续');
   } else if (message.type === 'TASK_CANCELED') {
+    if (isTaskRunning && chatExecActive && !pendingExecAfterCancel) {
+      return;
+    }
     updateChatStatus('已停止', 'error');
     setTaskControlButtons({ running: false, paused: false });
     if (statusPollingInterval) {
@@ -2298,41 +2309,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     executeBtn.disabled = false;
 
     // 如果用户在执行中又发了新的执行请求：停止后自动开始
-    if (pendingExecAfterCancel) {
-      const pending = pendingExecAfterCancel;
-      pendingExecAfterCancel = null;
-      // 模拟用户重新发送：直接走 START_TASK
-      try {
-        chatSendBtn && (chatSendBtn.disabled = true);
-        updateChatStatus('开始新任务...', 'thinking');
-        // 复用执行路径：直接触发一次 beginExecTask（在 sendChatMessage 作用域里定义，无法直接调用）
-        // 这里用最小实现：再次调用 sendChatMessage 的执行逻辑不方便，改为直接发 START_TASK 并创建新的日志气泡
-        chatExecActive = true;
-        chatExecLogs = [];
-        chatExecBubbleEl = createUpdatableBotMessage('收到，我开始在浏览器里执行…\n（执行日志会在这里滚动输出）');
-        chatExecLastFlushTs = 0;
-        if (taskInput) taskInput.value = pending.taskWithAttachments;
-        lastSubmittedTask = pending.originalText;
-        isTaskRunning = true;
-        setTaskControlButtons({ running: true, paused: false });
-        chrome.runtime.sendMessage({
-          type: 'START_TASK',
-          task: pending.taskWithAttachments,
-          model: model.value || 'gpt-4o-mini',
-          confluenceToken: confluenceToken?.value || null,
-          preferShenzhou: pending.preferShenzhou,
-          contextText: buildContextText(12),
-          skillMentions: pending.skillMentions || []
-        }, () => {
-          updateChatStatus('执行中...', 'thinking');
-          startStatusPolling();
-          chatSendBtn && (chatSendBtn.disabled = false);
-        });
-      } catch (e) {
-        chatSendBtn && (chatSendBtn.disabled = false);
-        addChatMessage(`自动开始新任务失败：${e.message}`, false);
-      }
-    }
+    if (pendingExecAfterCancel) kickoffPendingExec(pendingExecAfterCancel);
   } else if (message.type === 'TASK_PROGRESS') {
     const action = message.action || '';
     const thinking = message.thinking || '';
