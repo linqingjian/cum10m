@@ -700,6 +700,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(result => sendResponse(result))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
+  } else if (request.type === 'CHAT_MESSAGE_STREAM') {
+    if (request.weeklyReportRootPageId) {
+      WEEKLY_REPORT_ROOT_PAGE_ID = request.weeklyReportRootPageId;
+      console.log('✅ 周报根目录页面ID已更新:', WEEKLY_REPORT_ROOT_PAGE_ID);
+    }
+    const requestId = request.requestId || `chat_${Date.now()}`;
+    const sendChunk = (chunk) => {
+      chrome.runtime.sendMessage({ type: 'CHAT_STREAM', requestId, chunk }).catch(() => {});
+    };
+    const sendStatus = (status) => {
+      chrome.runtime.sendMessage({ type: 'CHAT_STREAM_STATUS', requestId, status }).catch(() => {});
+    };
+    handleChatMessage(
+      request.message,
+      request.model,
+      request.weeklyReportRootPageId || WEEKLY_REPORT_ROOT_PAGE_ID,
+      {
+        showPlan: !!request.showPlan,
+        includePageContext: request.includePageContext !== false,
+        attachments: Array.isArray(request.attachments) ? request.attachments : [],
+        allowImages: !!request.allowImages,
+        contextText: request.contextText || '',
+        skillMentions: Array.isArray(request.skillMentions) ? request.skillMentions : [],
+        stream: true,
+        onStreamChunk: sendChunk,
+        onStreamStatus: sendStatus
+      }
+    )
+      .then(reply => {
+        sendResponse({ success: true, reply: reply });
+        chrome.runtime.sendMessage({ type: 'CHAT_STREAM_DONE', requestId, reply }).catch(() => {});
+      })
+      .catch(error => {
+        sendResponse({ success: false, error: error.message || '对话处理失败，请检查控制台日志' });
+        chrome.runtime.sendMessage({ type: 'CHAT_STREAM_ERROR', requestId, error: error.message || '对话处理失败' }).catch(() => {});
+      });
+    return true;
   } else if (request.type === 'CHAT_MESSAGE') {
     // 纯对话模式：直接调用 AI 进行对话，不执行浏览器操作
     // 更新周报根目录页面ID（如果提供了）
@@ -1342,6 +1379,11 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
       console.warn('⚠️ 获取页面上下文失败:', error.message);
     }
   }
+
+  const streamEnabled = !!options.stream && typeof options.onStreamChunk === 'function';
+  const onStreamChunk = streamEnabled ? options.onStreamChunk : null;
+  const onStreamStatus = typeof options.onStreamStatus === 'function' ? options.onStreamStatus : null;
+  if (onStreamStatus) onStreamStatus('思考中...');
   
   try {
     const skillMentions = Array.isArray(options.skillMentions) && options.skillMentions.length > 0
@@ -1727,28 +1769,68 @@ ${importantLines.join('\n')}`;
     console.log('🤖 调用 AI 生成回复，超时时间: 60秒');
     try {
       const timeout = 60000; // 60秒
-      const callChatModel = async (messages) => {
+      const callChatModel = async (messages, streamConfig = null) => {
         console.log('📤 发送消息到 AI，消息数量:', messages.length);
+        if (streamEnabled && streamConfig) {
+          return callAIStream(messages, model, timeout, { max_tokens: 1800, temperature: 0.2 }, streamConfig.onChunk);
+        }
         return callAI(messages, model, timeout, { max_tokens: 1800, temperature: 0.2 });
       };
 
-      const response = await callChatModel(finalMessages);
-      console.log('✅ AI 回复生成成功，长度:', response?.length || 0);
-      
-      if (!response || response.trim().length === 0) {
+      let streamSent = false;
+      const directStreamHandler = streamEnabled && typeof onStreamChunk === 'function'
+        ? (delta) => {
+          if (!delta) return;
+          streamSent = true;
+          onStreamChunk(delta);
+        }
+        : null;
+      let gatedBuffer = '';
+      const tokenGate = () => {
+        if (!streamEnabled || !canSendImages || typeof onStreamChunk !== 'function') return null;
+        const token = SCREENSHOT_REQUEST_TOKEN;
+        return {
+          onChunk: (delta) => {
+            if (!delta) return;
+            gatedBuffer += delta;
+            if (token.startsWith(gatedBuffer)) return;
+            streamSent = true;
+            onStreamChunk(gatedBuffer);
+            gatedBuffer = '';
+          },
+          flushIfAny: () => {
+            if (gatedBuffer) {
+              streamSent = true;
+              onStreamChunk(gatedBuffer);
+              gatedBuffer = '';
+            }
+          }
+        };
+      };
+
+      const gate = tokenGate();
+      const response = await callChatModel(finalMessages, gate ? { onChunk: gate.onChunk } : (directStreamHandler ? { onChunk: directStreamHandler } : null));
+      if (gate) gate.flushIfAny();
+
+      const responseText = String(response || '').trim();
+      console.log('✅ AI 回复生成成功，长度:', responseText.length || 0);
+
+      if (!responseText) {
         throw new Error('AI 返回了空响应');
       }
 
-      if (responseRequestsScreenshot(response)) {
+      if (responseRequestsScreenshot(responseText)) {
         if (!canSendImages) {
           return '当前模型不支持图片输入，无法自动截图。请切换到支持图片的模型，或手动上传截图。';
         }
 
+        if (onStreamStatus) onStreamStatus('需要截图，正在获取...');
         const screenshot = await captureActiveTabScreenshot();
         if (!screenshot.success) {
           return `需要截图但未成功：${screenshot.error || '截图失败'}。你也可以手动上传或粘贴截图。`;
         }
 
+        if (onStreamStatus) onStreamStatus('已获取截图，正在分析...');
         const followupPrompt = `${buildFinalPrompt(false)}\n\n（已获取当前页面截图，请直接基于截图回答。）`;
         const screenshotAttachment = { kind: 'image', name: 'auto-screenshot.png', dataUrl: screenshot.dataUrl };
         const followupUserContent = buildUserContent(message, attachments, [screenshotAttachment]);
@@ -1757,14 +1839,19 @@ ${importantLines.join('\n')}`;
           { role: 'user', content: followupUserContent }
         ];
 
-        const followupResponse = await callChatModel(followupMessages);
-        if (responseRequestsScreenshot(followupResponse)) {
+        const followupResponse = await callChatModel(followupMessages, directStreamHandler ? { onChunk: directStreamHandler } : null);
+        const followupText = String(followupResponse || '').trim();
+        if (responseRequestsScreenshot(followupText)) {
           return '已提供截图，但仍无法判断。请描述你希望我关注的区域或补充问题细节。';
         }
-        return followupResponse;
+        return followupText;
       }
 
-      return response;
+      if (streamEnabled && !streamSent && typeof onStreamChunk === 'function') {
+        onStreamChunk(responseText);
+      }
+
+      return responseText;
     } catch (error) {
       // 如果 AI 调用失败（如 function call 被拒绝），但已有搜索结果，生成默认回复
       if (confluenceResults && confluenceResults.length > 0 && 
@@ -2914,6 +3001,142 @@ usage: ${JSON.stringify(data.usage)}`;
     throw error;
   } finally {
     if (controller) activeTaskAbortControllers.delete(controller);
+  }
+}
+
+async function callAIStream(messages, model = 'gemini-3-pro-preview', timeout = 60000, options = {}, onChunk = null) {
+  let controller = null;
+  try {
+    await loadConfigFromStorage();
+    if (!API_TOKEN) {
+      throw new Error('API Token 未配置，请在侧边栏配置后重试');
+    }
+
+    const requestUrl = normalizeApiUrl(API_URL);
+    const maxTokens = typeof options.max_tokens === 'number' ? options.max_tokens : 2000;
+
+    const modelLower = String(model || '').toLowerCase();
+    const mayNotSupportLowTemperature = modelLower.includes('gpt-5') ||
+                                         modelLower.startsWith('gpt-5') ||
+                                         modelLower === 'gpt-5';
+    let temperature = typeof options.temperature === 'number' ? options.temperature : 0.2;
+    if (mayNotSupportLowTemperature && temperature < 1) {
+      temperature = undefined;
+    }
+
+    const buildBody = (override = {}) => {
+      const requestBody = {
+        model: model,
+        messages: messages,
+        max_tokens: maxTokens,
+        ...override
+      };
+      if (temperature !== undefined && override.temperature !== null) {
+        requestBody.temperature = temperature;
+      }
+      return requestBody;
+    };
+
+    const runRequest = async (body) => {
+      controller = new AbortController();
+      if (currentTask) activeTaskAbortControllers.add(controller);
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${API_TOKEN}`,
+          'Content-Type': 'application/json',
+          'X-Mtcc-Client': 'shenzhou-assistant-extension'
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      return response;
+    };
+
+    let response = await runRequest(buildBody({ stream: true }));
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      const isTemperatureError = errorText.includes('temperature') &&
+        (errorText.includes('does not support') ||
+         errorText.includes('unsupported') ||
+         errorText.includes('Only the default') ||
+         errorText.includes('invalid_request_error'));
+      if (isTemperatureError && temperature !== undefined) {
+        temperature = undefined;
+        response = await runRequest(buildBody({ stream: true, temperature: null }));
+      } else {
+        throw new Error(`AI 调用失败 (${response.status}): ${errorText.substring(0, 200)}`);
+      }
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.body || !contentType.includes('text/event-stream')) {
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        return text;
+      }
+      if (!data?.choices?.length) return '';
+      const choice = data.choices[0];
+      return choice.message?.content || choice.text || '';
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let fullText = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\n/);
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.replace(/^data:\s*/, '');
+        if (payload === '[DONE]') {
+          buffer = '';
+          break;
+        }
+        if (!payload) continue;
+        let json;
+        try {
+          json = JSON.parse(payload);
+        } catch (e) {
+          continue;
+        }
+        const delta = json?.choices?.[0]?.delta?.content ?? json?.choices?.[0]?.message?.content ?? '';
+        if (delta) {
+          fullText += delta;
+          if (typeof onChunk === 'function') {
+            try {
+              onChunk(delta);
+            } catch (e) {
+              // ignore
+            }
+          }
+        }
+      }
+    }
+
+    return fullText;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('AI 调用超时');
+    }
+    throw error;
+  } finally {
+    if (controller && currentTask) activeTaskAbortControllers.delete(controller);
   }
 }
 

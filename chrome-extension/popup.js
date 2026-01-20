@@ -447,6 +447,9 @@ let lastPolledLogIndex = 0;
 let autoSyncTimer = null;
 let autoSyncInFlight = false;
 let lastAutoSyncAt = 0;
+let chatStreamRequestId = null;
+let chatStreamBuffer = '';
+let chatStreamBubbleEl = null;
 
 function isVerboseLogsEnabled() {
   return !!verboseLogsToggle?.checked;
@@ -854,9 +857,53 @@ document.addEventListener('DOMContentLoaded', () => {
     pushChatHistory('assistant', replyText);
   }
 
+  function renderBotReplyIntoBubble(bubble, replyText) {
+    if (!bubble) return;
+    const { answer, plan } = normalizePlanSections(replyText);
+    bubble.innerHTML = '';
+    const answerDiv = document.createElement('div');
+    renderMessageContent(answerDiv, answer || replyText || '');
+    bubble.appendChild(answerDiv);
+    if (plan) {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = '思路（点击展开）';
+      const planDiv = document.createElement('div');
+      planDiv.style.marginTop = '8px';
+      planDiv.style.whiteSpace = 'pre-wrap';
+      planDiv.textContent = plan;
+      details.appendChild(summary);
+      details.appendChild(planDiv);
+      bubble.appendChild(details);
+    }
+  }
+
   function updateChatStatus(text, type = '') {
     chatStatus.textContent = text;
     chatStatus.className = `chat-status ${type}`;
+  }
+
+  function startChatStream(requestId) {
+    chatStreamRequestId = requestId;
+    chatStreamBuffer = '';
+    chatStreamBubbleEl = createUpdatableBotMessage('思考中...');
+  }
+
+  function applyChatStreamChunk(requestId, chunk) {
+    if (!chatStreamBubbleEl || chatStreamRequestId !== requestId) return;
+    chatStreamBuffer += String(chunk || '');
+    renderMessageContent(chatStreamBubbleEl, chatStreamBuffer);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function finalizeChatStream(requestId, replyText) {
+    if (!chatStreamBubbleEl || chatStreamRequestId !== requestId) return;
+    const finalText = String(replyText || chatStreamBuffer || '').trim();
+    renderBotReplyIntoBubble(chatStreamBubbleEl, finalText);
+    pushChatHistory('assistant', finalText);
+    chatStreamRequestId = null;
+    chatStreamBuffer = '';
+    chatStreamBubbleEl = null;
   }
 
   function setTaskControlButtons({ running, paused }) {
@@ -1125,8 +1172,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const contextText = buildContextText(12);
 
       if (mode === 'chat') {
+        const requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        startChatStream(requestId);
         chrome.runtime.sendMessage({
-          type: 'CHAT_MESSAGE',
+          type: 'CHAT_MESSAGE_STREAM',
+          requestId: requestId,
           message: question,
           model: model.value || 'gpt-4o-mini',
           weeklyReportRootPageId: weeklyReportRootPageId?.value || null,
@@ -1159,7 +1209,11 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('✅ 对话成功');
             updateChatStatus('就绪');
             chatSendBtn.disabled = false;
-            addBotReplyWithOptionalPlan(response.reply || '抱歉，我没有理解你的问题');
+            if (chatStreamRequestId === requestId && chatStreamBubbleEl) {
+              finalizeChatStream(requestId, response.reply || '');
+            } else if (response.reply) {
+              addBotReplyWithOptionalPlan(response.reply || '抱歉，我没有理解你的问题');
+            }
             clearAttachments();
           } else {
             console.error('❌ 对话失败:', response.error);
@@ -2283,6 +2337,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (chatExecActive && (action || thinking)) {
       if (action) appendChatExecLog(`执行：${action}`);
       if (thinking) appendChatExecLog(`思路：${thinking}`);
+    }
+  } else if (message.type === 'CHAT_STREAM') {
+    if (message.requestId && message.requestId === chatStreamRequestId) {
+      applyChatStreamChunk(message.requestId, message.chunk || '');
+    }
+  } else if (message.type === 'CHAT_STREAM_STATUS') {
+    if (message.requestId && message.requestId === chatStreamRequestId) {
+      const statusText = message.status || '思考中...';
+      updateChatStatus(statusText, 'thinking');
+      if (chatStreamBubbleEl && !chatStreamBuffer) {
+        chatStreamBubbleEl.textContent = statusText;
+      }
+    }
+  } else if (message.type === 'CHAT_STREAM_DONE') {
+    if (message.requestId && message.requestId === chatStreamRequestId) {
+      finalizeChatStream(message.requestId, message.reply || '');
+      updateChatStatus('就绪');
+      chatSendBtn && (chatSendBtn.disabled = false);
+    }
+  } else if (message.type === 'CHAT_STREAM_ERROR') {
+    if (message.requestId && message.requestId === chatStreamRequestId) {
+      const errMsg = message.error || '对话失败';
+      updateChatStatus('错误', 'error');
+      if (chatStreamBubbleEl) {
+        chatStreamBubbleEl.textContent = `❌ ${errMsg}`;
+      }
+      chatStreamRequestId = null;
+      chatStreamBuffer = '';
+      chatStreamBubbleEl = null;
+      chatSendBtn && (chatSendBtn.disabled = false);
     }
   }
 });
