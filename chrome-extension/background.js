@@ -519,7 +519,7 @@ SQL：SELECT SUM(cost) AS total_cost, COUNT(*) AS row_count FROM 库.表 WHERE d
 - input_sql: {"action":"input_sql","sql":"SELECT ..."}
 - click_format: {"action":"click_format"}
 - click_execute: {"action":"click_execute"}
-- get_result: {"action":"get_result"}（获取查询结果并自动格式化）
+- get_result: {"action":"get_result"}（获取查询结果并自动格式化；无结果时尝试读取 SQL 编辑器内容）
 
 任务/依赖：
 - click_rerun: {"action":"click_rerun","rerun_type":"latest|instance"}
@@ -1179,6 +1179,14 @@ async function startTask(task, model, options = {}) {
         }
       }
       // 如果获取到了查询结果，明确告诉 AI 应该 finish
+      else if (action.action === 'get_result' && result.success && result.resultType === 'sql') {
+        const sqlText = String(result.sql || '');
+        const clipped = sqlText.length > 8000 ? `${sqlText.slice(0, 8000)}\n\n[已截断]` : sqlText;
+        messages.push({
+          role: 'user',
+          content: `已获取任务 SQL（来源: ${result.editorType || 'editor'}）。请结合 SQL 总结任务逻辑并立即 finish。SQL 内容：\n${clipped}`
+        });
+      }
       else if (action.action === 'get_result' && result.success && result.data) {
         if (result.formatted) {
           // 如果已经有格式化结果，直接使用
@@ -4482,18 +4490,71 @@ async function executeAction(action) {
       return clickResultData;
       
     case 'get_result': {
-      // 等待5秒后获取查询结果
       const waitTime = 5000; // 5秒
-      addLog(`等待 ${waitTime / 1000} 秒后获取查询结果...`, 'info');
-      
-      // 先等待5秒
-      await sleep(waitTime);
-      
-      // 然后检查结果
-      addLog(`开始检查查询结果...`, 'info');
-      const resultData = await chrome.scripting.executeScript({
-        target: { tabId: currentTabId },
-        func: () => {
+      const checkResultOnce = async () => {
+        const resultData = await chrome.scripting.executeScript({
+          target: { tabId: currentTabId },
+          func: () => {
+            const normalizeSql = (value) => String(value || '').replace(/\u00a0/g, ' ').trim();
+            const looksLikeSql = (value) => /\b(select|insert|update|delete|with|create|drop|set|from)\b/i.test(value);
+            const isLargeEditor = (el) => {
+              if (!el) return false;
+              const rect = el.getBoundingClientRect();
+              return rect.width > 240 && rect.height > 120;
+            };
+            const readSqlFromEditors = () => {
+              // CodeMirror
+              const cmElements = document.querySelectorAll('.CodeMirror, .vue-codemirror');
+              for (const cmEl of cmElements) {
+                const cmInstance = cmEl.CodeMirror || cmEl.__CodeMirror || window.CodeMirror?.get?.(cmEl);
+                if (cmInstance && typeof cmInstance.getValue === 'function') {
+                  const value = normalizeSql(cmInstance.getValue());
+                  if (value.length > 0) {
+                    return { success: true, resultType: 'sql', sql: value, editorType: 'CodeMirror' };
+                  }
+                }
+              }
+
+              // Ace
+              if (window.ace) {
+                const aceElements = document.querySelectorAll('.ace_editor, [class*="ace_editor"]');
+                for (const aceEl of aceElements) {
+                  try {
+                    const aceEditor = window.ace.edit(aceEl);
+                    if (aceEditor && typeof aceEditor.getValue === 'function') {
+                      const value = normalizeSql(aceEditor.getValue());
+                      if (value.length > 0) {
+                        return { success: true, resultType: 'sql', sql: value, editorType: 'Ace' };
+                      }
+                    }
+                  } catch (e) {
+                    // ignore
+                  }
+                }
+              }
+
+              // textarea / contenteditable fallback
+              const textareas = document.querySelectorAll('textarea');
+              for (const ta of textareas) {
+                if (!isLargeEditor(ta)) continue;
+                const value = normalizeSql(ta.value);
+                if (value.length > 0 && looksLikeSql(value)) {
+                  return { success: true, resultType: 'sql', sql: value, editorType: 'textarea' };
+                }
+              }
+
+              const editables = document.querySelectorAll('[contenteditable="true"]');
+              for (const el of editables) {
+                if (!isLargeEditor(el)) continue;
+                const value = normalizeSql(el.innerText);
+                if (value.length > 0 && looksLikeSql(value)) {
+                  return { success: true, resultType: 'sql', sql: value, editorType: 'contenteditable' };
+                }
+              }
+
+              return null;
+            };
+
             // 检查是否有错误
             const error = document.querySelector('.ant-message-error, .error-message, .ant-alert-error');
             if (error) {
@@ -4512,7 +4573,7 @@ async function executeAction(action) {
               table = document.querySelector('table');
             }
             
-          if (table) {
+            if (table) {
               // 检查表格是否有数据行（排除表头）
               const allRows = Array.from(table.querySelectorAll('tr'));
               const dataRows = allRows.filter(tr => {
@@ -4522,8 +4583,8 @@ async function executeAction(action) {
               
               if (dataRows.length > 0) {
                 const rows = dataRows.map(tr =>
-              Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim())
-            );
+                  Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim())
+                );
                 
                 if (rows.length > 0 && rows[0].length > 0) {
                   // 检查是否真的是数据（不是空行或加载提示）
@@ -4532,20 +4593,20 @@ async function executeAction(action) {
                     return { waiting: true };
                   }
                   
-            // 格式化结果，便于 AI 理解
-            if (rows.length > 0 && rows[0].length >= 2) {
-              const firstRow = rows[0];
-              // 尝试解析为数字
-              const totalCost = parseFloat(firstRow[1]) || firstRow[1];
+                  // 格式化结果，便于 AI 理解
+                  if (rows.length > 0 && rows[0].length >= 2) {
+                    const firstRow = rows[0];
+                    // 尝试解析为数字
+                    const totalCost = parseFloat(firstRow[1]) || firstRow[1];
                     const rowCount = parseInt(firstRow[2]) || firstRow[2] || rows.length;
-              return { 
-                success: true, 
-                data: rows,
-                formatted: `Cost 总和: ${totalCost}, 数据条数: ${rowCount}`
-              };
-            }
-            return { success: true, data: rows };
-          }
+                    return { 
+                      success: true, 
+                      data: rows,
+                      formatted: `Cost 总和: ${totalCost}, 数据条数: ${rowCount}`
+                    };
+                  }
+                  return { success: true, data: rows };
+                }
               }
             }
             
@@ -4579,18 +4640,39 @@ async function executeAction(action) {
               // 如果看到"查询结果仍未完成"，说明查询还在运行，应该继续等待
               return { running: true, progress: '查询结果仍未完成，继续等待...' };
             }
+
+            // 如果不是查询结果页面，尝试读取 SQL 编辑器内容
+            const sqlResult = readSqlFromEditors();
+            if (sqlResult) {
+              return sqlResult;
+            }
             
             return { waiting: true };
           }
         });
-        
-      const result = resultData[0]?.result;
+        return resultData[0]?.result;
+      };
+
+      addLog('开始检查查询结果...', 'info');
+      let result = await checkResultOnce();
+
+      if (result?.running) {
+        addLog(`查询仍在运行，等待 ${waitTime / 1000} 秒后重试...`, 'info');
+        await sleep(waitTime);
+        result = await checkResultOnce();
+      }
       
       if (result?.error) {
         addLog(`❌ 查询出错: ${result.error}`, 'error');
         return { success: false, error: result.error };
       }
       
+      if (result?.success && result?.resultType === 'sql') {
+        const preview = String(result.sql || '').slice(0, 120);
+        addLog(`✅ 已获取 SQL 编辑器内容 (${result.editorType || 'unknown'}): ${preview}...`, 'success');
+        return result;
+      }
+
       if (result?.success && result?.data) {
         addLog(`✅ 查询结果已获取: ${result.formatted || JSON.stringify(result.data)}`, 'success');
         return result;
