@@ -310,6 +310,55 @@
       margin-top: 5px;
       padding: 0 5px;
     }
+
+    .code-block {
+      margin: 8px 0;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(0, 0, 0, 0.35);
+      overflow: hidden;
+    }
+
+    .code-block-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      font-size: 11px;
+      color: #9ad6ff;
+      background: rgba(0, 217, 255, 0.08);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .code-block-header .lang {
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .code-copy-btn {
+      border: none;
+      background: rgba(255, 255, 255, 0.12);
+      color: #e4e4e4;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .code-copy-btn:hover {
+      background: rgba(0, 217, 255, 0.2);
+    }
+
+    .code-block pre {
+      margin: 0;
+      padding: 10px 12px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      white-space: pre;
+      overflow-x: auto;
+      color: #f1f1f1;
+    }
     
     .chat-input-container {
       display: flex;
@@ -650,6 +699,94 @@
       display: grid;
       gap: 10px;
     }
+
+    .skills-section {
+      margin-top: 10px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .skill-form {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 10px;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .skill-form textarea {
+      min-height: 60px;
+    }
+
+    .skill-form-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .skill-form-actions button {
+      flex: 1;
+      padding: 8px 10px;
+      font-size: 12px;
+      border-radius: 8px;
+    }
+
+    .skills-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .skill-item {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .skill-item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .skill-item-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .skill-item-desc {
+      font-size: 12px;
+      color: #b5b5b5;
+      white-space: pre-wrap;
+    }
+
+    .skill-item-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .skill-item-actions button {
+      padding: 4px 8px;
+      font-size: 11px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      background: rgba(255, 255, 255, 0.06);
+      color: #e4e4e4;
+      cursor: pointer;
+    }
+
+    .skill-item-actions button:hover {
+      background: rgba(0, 217, 255, 0.15);
+      border-color: rgba(0, 217, 255, 0.4);
+    }
+
+    .skill-hint {
+      font-size: 11px;
+      color: #8c8c8c;
+    }
   </style>
 </head>
 <body>
@@ -789,6 +926,32 @@
         <label>Webhook URL</label>
         <input type="text" id="webhookUrl" value="">
       </div>
+    </div>
+  </details>
+
+  <details>
+    <summary>🧩 Skills 管理</summary>
+    <div class="skills-section">
+      <div class="skill-form">
+        <div>
+          <label>技能名称（用于展示）</label>
+          <input type="text" id="skillNameInput" placeholder="例如：数据报表" />
+        </div>
+        <div>
+          <label>技能描述（简明说明能做什么）</label>
+          <textarea id="skillDescInput" rows="3" placeholder="例如：生成周报数据统计口径、输出 SQL 模板"></textarea>
+        </div>
+        <div>
+          <label>使用说明（可选，提供流程/规则/输出格式）</label>
+          <textarea id="skillPromptInput" rows="3" placeholder="例如：输出 SQL 时必须带 date_p 分区与 type_p>=0000"></textarea>
+        </div>
+        <div class="skill-form-actions">
+          <button id="skillSaveBtn" class="btn-secondary">保存技能</button>
+          <button id="skillCancelBtn" class="btn-secondary">取消编辑</button>
+        </div>
+        <div class="skill-hint">提示：在对话中输入 @技能名 可触发该技能（空格会自动去掉）。</div>
+      </div>
+      <div id="skillsList" class="skills-list"></div>
     </div>
   </details>
   

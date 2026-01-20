@@ -6,6 +6,7 @@ const readStoredValue = (result, key) => {
   const prefixed = storageKey(key);
   return result[prefixed] ?? result[key];
 };
+const CUSTOM_SKILLS_STORAGE_KEY = storageKey('customSkills');
 
 const DEFAULT_API_BASE_URL = 'https://model-router.meitu.com/v1';
 let API_TOKEN = '';
@@ -71,6 +72,61 @@ async function loadConfigFromStorage() {
       resolve();
     });
   });
+}
+
+function normalizeSkillHandle(value) {
+  return String(value || '')
+    .replace(/^@+/, '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+function getSkillHandle(skill) {
+  return normalizeSkillHandle(skill?.handle || skill?.name || '');
+}
+
+function extractSkillMentions(text) {
+  const normalized = String(text || '');
+  const regex = /@([\w\u4e00-\u9fa5_-]+)/g;
+  const mentions = new Set();
+  let match;
+  while ((match = regex.exec(normalized)) !== null) {
+    const handle = normalizeSkillHandle(match[1]);
+    if (handle) mentions.add(handle);
+  }
+  return Array.from(mentions);
+}
+
+async function loadCustomSkillsFromStorage() {
+  const result = await chrome.storage.local.get([CUSTOM_SKILLS_STORAGE_KEY, 'customSkills']);
+  const stored = readStoredValue(result, 'customSkills');
+  return Array.isArray(stored) ? stored : [];
+}
+
+function buildCustomSkillsBlock(customSkills, mentions = [], options = {}) {
+  const enabled = (customSkills || []).filter(skill => skill && skill.enabled !== false);
+  if (enabled.length === 0) return '';
+
+  const normalizedMentions = (mentions || []).map(normalizeSkillHandle).filter(Boolean);
+  let selected = enabled;
+  if (normalizedMentions.length > 0) {
+    selected = enabled.filter(skill => normalizedMentions.includes(getSkillHandle(skill)));
+  }
+  const maxSkills = typeof options.maxSkills === 'number' ? options.maxSkills : 6;
+  selected = selected.slice(0, maxSkills);
+  if (selected.length === 0) return '';
+
+  const lines = selected.map(skill => {
+    const handle = getSkillHandle(skill);
+    const label = handle ? `${skill.name}（@${handle}）` : skill.name;
+    const desc = String(skill.description || '').trim().slice(0, 200);
+    const prompt = String(skill.prompt || '').trim().slice(0, 240);
+    const detail = prompt ? `\n  说明: ${prompt}` : '';
+    return `- ${label}: ${desc || '（暂无描述）'}${detail}`;
+  });
+  const header = normalizedMentions.length > 0 ? '【用户指定技能】' : '【用户自定义技能】';
+  return `${header}\n${lines.join('\n')}`;
 }
 
 function withTimeout(promise, ms) {
@@ -193,6 +249,65 @@ function isOperablePageUrl(url) {
   return !!url && (url.startsWith('http://') || url.startsWith('https://'));
 }
 
+const DESTRUCTIVE_KEYWORDS = [
+  '删除',
+  '清空',
+  '清除',
+  '移除',
+  '批量删除',
+  '永久删除',
+  'delete',
+  'drop',
+  'truncate',
+  'remove',
+  'erase'
+];
+const SAFE_DELETE_HINTS = ['取消删除', '撤销删除', '恢复', '放弃'];
+const DESTRUCTIVE_SQL_REGEX = /\b(delete|drop|truncate)\b/i;
+
+function looksDestructiveText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return false;
+  const lowered = raw.toLowerCase();
+  if (SAFE_DELETE_HINTS.some(k => lowered.includes(k.toLowerCase()))) return false;
+  if (DESTRUCTIVE_SQL_REGEX.test(lowered)) return true;
+  return DESTRUCTIVE_KEYWORDS.some(keyword => lowered.includes(keyword.toLowerCase()));
+}
+
+function collectActionTextCandidates(action) {
+  const candidates = [];
+  const index = typeof action?.index === 'number' ? action.index : (typeof action?.索引 === 'number' ? action.索引 : null);
+  if (action?.action === 'click' && index !== null && lastPageInfo?.clickables?.[index]) {
+    const clickItem = lastPageInfo.clickables[index];
+    if (clickItem.text) candidates.push(clickItem.text);
+    if (clickItem.selector) candidates.push(clickItem.selector);
+  }
+
+  if (action?.action === 'click') {
+    candidates.push(action.selector, action.target, action.text, action.文本, action.参数);
+  }
+
+  if (action?.action === 'type') {
+    candidates.push(action.text, action.value, action.内容, action.值, action.参数);
+  }
+
+  if (action?.action === 'input_sql') {
+    candidates.push(action.sql, action.参数);
+  }
+
+  return candidates.filter(Boolean).map(value => String(value));
+}
+
+function getDestructiveReason(action) {
+  const candidates = collectActionTextCandidates(action);
+  for (const candidate of candidates) {
+    if (looksDestructiveText(candidate)) {
+      return candidate.slice(0, 120);
+    }
+  }
+  return null;
+}
+
 function extractTaskNameFromQuery(text) {
   const s = String(text || '').trim();
   if (!s) return '';
@@ -296,7 +411,7 @@ const SKILLS_DOC = `操作：navigate, wait, get_page_info, click, click_at, typ
 分区：date_p格式'20260101'，type_p使用'>=0000'
 SQL：SELECT SUM(cost) AS total_cost, COUNT(*) AS row_count FROM 库.表 WHERE date_p>='开始' AND date_p<='结束' AND type_p>='0000'
 
-规则：只返回一个JSON对象（不要数组/不要markdown/不要解释）
+规则：只返回一个JSON对象（不要数组/不要markdown/不要解释）；禁止删除/清空/Drop/Truncate 操作
 
 - navigate: {"action":"navigate","url":"https://..."}
 - wait: {"action":"wait","seconds":0.2-2}
@@ -331,7 +446,7 @@ Confluence：
 - finish: {"action":"finish","result":"结果文本"}`;
 
 // 构建动态 SYSTEM_PROMPT（极简版）
-function buildSystemPrompt(userTask, contextText = '') {
+function buildSystemPrompt(userTask, contextText = '', customSkillsBlock = '') {
   const taskInspect = looksLikeTaskLogicInspection(userTask);
   const inspectHint = taskInspect.ok
     ? `\n【任务逻辑查看规范 - 必须严格遵守】\n你必须真实打开神舟页面获取信息，不允许凭空总结。\n目标任务名：${taskInspect.name || '（从页面搜索）'}\n\n⚠️⚠️⚠️ 强制操作流程（不可跳过任何步骤，即使任务在列表中可见也必须先搜索）⚠️⚠️⚠️：\n1) navigate 到 https://shenzhou.tatstm.com/data-develop/tasks\n2) get_page_info → 获取页面状态，找到"任务名称"或"任务名"搜索输入框（通常在页面顶部）\n3) type → 在搜索框输入任务名"${taskInspect.name || '任务名'}"（必须完整输入任务名称）\n4) click → 点击搜索按钮（通常是输入框右侧的搜索图标或"搜索"按钮）\n5) wait → 等待搜索结果加载完成（必须看到搜索结果列表，通常会有"共X条"提示）\n6) get_page_info → 再次获取页面状态，确认搜索结果中出现目标任务"${taskInspect.name || '任务名'}"\n7) click → 点击搜索结果中的目标任务名称或"编辑"按钮\n8) get_page_info → 获取任务详情页面状态\n9) click → 点击"编辑"按钮（如果还没进入编辑页面）\n10) get_result → 抓取任务SQL/说明/输入输出表/调度信息\n11) 如需依赖：click_dag_view / get_dag_info\n12) finish → 用要点总结（目的/来源/口径/产出/分区/调度/依赖/注意事项）\n\n🚫🚫🚫 严格禁止（违反将导致任务失败）🚫🚫🚫：\n- ❌ 禁止跳过搜索步骤直接点击列表中的任务（即使任务已经在列表中可见）\n- ❌ 禁止在未输入任务名称到搜索框时就点击任何按钮\n- ❌ 禁止在未点击搜索按钮时就点击任务\n- ❌ 禁止在未看到搜索结果时就点击任何按钮\n- ❌ 禁止假设任务位置，必须通过搜索确认\n- ❌ 禁止在未 get_result 或 get_dag_info 之前就 finish\n\n💡 重要提示：\n- 即使任务列表已经显示了目标任务，也必须先清空搜索框、输入任务名、点击搜索\n- 搜索是为了确保找到正确的任务，避免点击错误的同名任务\n- 搜索后通常会显示"共X条"结果，确认找到目标任务后再点击\n`
@@ -342,9 +457,14 @@ function buildSystemPrompt(userTask, contextText = '') {
     ? `\n【最近对话上下文】\n${clippedContext}\n（请结合上下文理解用户目标与约束）\n`
     : '';
 
+  const skillBlock = customSkillsBlock
+    ? `\n${customSkillsBlock}\n`
+    : '';
+
   return `数仓助手。返回一个JSON操作。
 
 ${SKILLS_DOC}
+${skillBlock}
 ${inspectHint}
 ${contextBlock}
 
@@ -415,7 +535,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // 异步执行任务，不阻塞响应
     startTask(request.task, request.model, {
       preferShenzhou: request.preferShenzhou !== false,
-      contextText: request.contextText || ''
+      contextText: request.contextText || '',
+      skillMentions: Array.isArray(request.skillMentions) ? request.skillMentions : []
     }).catch(error => {
       console.error('❌ 任务执行失败:', error);
       addLog(`❌ 任务执行失败: ${error.message}`, 'error');
@@ -509,7 +630,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         includePageContext: request.includePageContext !== false,
         attachments: Array.isArray(request.attachments) ? request.attachments : [],
         allowImages: !!request.allowImages,
-        contextText: request.contextText || ''
+        contextText: request.contextText || '',
+        skillMentions: Array.isArray(request.skillMentions) ? request.skillMentions : []
       }
     )
       .then(reply => {
@@ -644,9 +766,17 @@ async function startTask(task, model, options = {}) {
   
   // 使用动态构建的提示词：用户问题 + skills 文档
   addLog(`📝 构建系统提示词...`, 'action');
-  const systemPrompt = buildSystemPrompt(task, options.contextText || '');
+  const skillMentions = Array.isArray(options.skillMentions) && options.skillMentions.length > 0
+    ? options.skillMentions
+    : extractSkillMentions(task);
+  const customSkills = await loadCustomSkillsFromStorage();
+  const customSkillsBlock = buildCustomSkillsBlock(customSkills, skillMentions, { maxSkills: 6 });
+  const systemPrompt = buildSystemPrompt(task, options.contextText || '', customSkillsBlock);
   addLog(`✅ 系统提示词构建完成`, 'success');
   addLog(`✅ 已加载技能库: ${SKILLS_DOC.split('\n')[0]}`, 'info');
+  if (customSkillsBlock) {
+    addLog('✅ 已加载自定义技能', 'info');
+  }
   
   let messages = [
     { role: 'system', content: systemPrompt }
@@ -818,6 +948,13 @@ async function startTask(task, model, options = {}) {
           content: `你不能在未获取页面信息前总结。${nameHint}请按流程：navigate 到任务列表→get_page_info→type 搜索任务→click 打开→点击“编辑/开发/SQL/脚本”→get_result 抓取关键信息→必要时 get_dag_info→最后再 finish。现在返回下一步 JSON。`
         });
         continue;
+      }
+
+      const destructiveReason = getDestructiveReason(action);
+      if (destructiveReason) {
+        const blockedMsg = `检测到删除/清空相关操作，已拦截：${destructiveReason}`;
+        addLog(`🚫 ${blockedMsg}`, 'error');
+        throw new Error(blockedMsg);
       }
 
       addLog(`执行操作: ${action.action}`, 'action');
@@ -1110,6 +1247,12 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
   }
   
   try {
+    const skillMentions = Array.isArray(options.skillMentions) && options.skillMentions.length > 0
+      ? options.skillMentions
+      : extractSkillMentions(message);
+    const customSkills = await loadCustomSkillsFromStorage();
+    const customSkillsBlock = buildCustomSkillsBlock(customSkills, skillMentions, { maxSkills: 6 });
+
     // 直接根据用户消息中的关键词判断是否需要搜索（避免AI调用超时）
     const needsSearch = message.toLowerCase().includes('confluence') || 
                         message.toLowerCase().includes('cf') ||
@@ -1359,6 +1502,8 @@ async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRoo
 
 ${contextBlock}
 
+${customSkillsBlock ? `${customSkillsBlock}\n` : ''}
+
 ${pageInfo ? `
 **当前浏览器页面信息**：
 - URL: ${pageInfo.url}
@@ -1415,6 +1560,7 @@ ${confluenceResults.map((page, index) => {
 - 不要使用 function call 格式（如 call:confluence_search{...}）
 - 不要返回 JSON 格式的操作指令
 - 直接用中文回答用户的问题
+- 如果包含代码/SQL/脚本，请使用 Markdown 代码块并标注语言（例如：sql 代码块）
 ${options.showPlan ? '- 在回复末尾追加一段【思路】（3-6条要点），只写高层步骤/计划，不要输出模型隐含推理细节' : ''}`;
 
     // 处理附件：文本内容注入到用户消息；图片在允许且尺寸可控时以 image_url 形式附加（路由不支持会失败，再降级）

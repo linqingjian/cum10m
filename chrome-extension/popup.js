@@ -6,6 +6,7 @@ const readStoredValue = (result, key) => {
   const prefixed = storageKey(key);
   return result[prefixed] ?? result[key];
 };
+const CUSTOM_SKILLS_STORAGE_KEY = storageKey('customSkills');
 
 // 系统提示词 - 整合完整 Skills
 const SYSTEM_PROMPT = `你是美图公司数仓团队的 AI 助手 "数仓小助手"，负责在神舟大数据平台上执行数据查询和任务管理。
@@ -226,10 +227,13 @@ let chatModeSelect, chatShowPlanToggle, chatIncludePageContextToggle;
 let chatSyncPageButton;
 let pinBtn, pauseBtn, resumeBtn, cancelBtn;
 let attachBtn, screenshotBtn, fileInput, attachmentBar;
+let skillNameInput, skillDescInput, skillPromptInput, skillSaveBtn, skillCancelBtn, skillsList;
 
 let pendingAttachments = [];
-let pendingExecAfterCancel = null; // { taskWithAttachments, originalText, preferShenzhou }
+let pendingExecAfterCancel = null; // { taskWithAttachments, originalText, preferShenzhou, skillMentions }
 let chatHistory = []; // [{role, content, ts}]
+let customSkills = [];
+let editingSkillId = null;
 
 function saveChatHistory() {
   try {
@@ -257,6 +261,180 @@ function buildContextText(maxItems = 12) {
     .join('\n');
 }
 
+function normalizeSkillHandle(value) {
+  return String(value || '')
+    .replace(/^@+/, '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+function getSkillHandle(skill) {
+  return normalizeSkillHandle(skill?.handle || skill?.name || '');
+}
+
+function extractSkillMentions(text) {
+  const normalized = String(text || '');
+  const regex = /@([\w\u4e00-\u9fa5_-]+)/g;
+  const mentions = new Set();
+  let match;
+  while ((match = regex.exec(normalized)) !== null) {
+    const handle = normalizeSkillHandle(match[1]);
+    if (handle) mentions.add(handle);
+  }
+  return Array.from(mentions);
+}
+
+function getMissingSkillMentions(mentions) {
+  const handles = new Set((customSkills || []).map(getSkillHandle).filter(Boolean));
+  return (mentions || []).filter(m => !handles.has(normalizeSkillHandle(m)));
+}
+
+function loadCustomSkills() {
+  chrome.storage.local.get([CUSTOM_SKILLS_STORAGE_KEY, 'customSkills'], (result) => {
+    const stored = readStoredValue(result, 'customSkills');
+    customSkills = Array.isArray(stored)
+      ? stored.map(skill => ({
+        ...skill,
+        handle: getSkillHandle(skill) || normalizeSkillHandle(skill?.name || '')
+      }))
+      : [];
+    renderSkillsList();
+  });
+}
+
+function saveCustomSkills() {
+  chrome.storage.local.set({ [CUSTOM_SKILLS_STORAGE_KEY]: customSkills });
+}
+
+function resetSkillForm() {
+  editingSkillId = null;
+  if (skillNameInput) skillNameInput.value = '';
+  if (skillDescInput) skillDescInput.value = '';
+  if (skillPromptInput) skillPromptInput.value = '';
+  if (skillSaveBtn) skillSaveBtn.textContent = '保存技能';
+}
+
+function renderSkillsList() {
+  if (!skillsList) return;
+  skillsList.innerHTML = '';
+  if (!customSkills || customSkills.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'skill-item';
+    empty.textContent = '暂无自定义技能，添加后可用 @技能名 调用。';
+    skillsList.appendChild(empty);
+    return;
+  }
+
+  customSkills.forEach((skill) => {
+    const item = document.createElement('div');
+    item.className = 'skill-item';
+
+    const header = document.createElement('div');
+    header.className = 'skill-item-header';
+
+    const title = document.createElement('div');
+    title.className = 'skill-item-title';
+    const handle = getSkillHandle(skill);
+    title.textContent = handle ? `${skill.name} (@${handle})` : skill.name;
+
+    const actions = document.createElement('div');
+    actions.className = 'skill-item-actions';
+
+    const toggleLabel = document.createElement('label');
+    toggleLabel.style.display = 'inline-flex';
+    toggleLabel.style.alignItems = 'center';
+    toggleLabel.style.gap = '4px';
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox';
+    toggle.checked = skill.enabled !== false;
+    toggle.addEventListener('change', () => {
+      skill.enabled = toggle.checked;
+      saveCustomSkills();
+    });
+    const toggleText = document.createElement('span');
+    toggleText.style.fontSize = '11px';
+    toggleText.textContent = '启用';
+    toggleLabel.appendChild(toggle);
+    toggleLabel.appendChild(toggleText);
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.textContent = '编辑';
+    editBtn.addEventListener('click', () => {
+      editingSkillId = skill.id;
+      if (skillNameInput) skillNameInput.value = skill.name || '';
+      if (skillDescInput) skillDescInput.value = skill.description || '';
+      if (skillPromptInput) skillPromptInput.value = skill.prompt || '';
+      if (skillSaveBtn) skillSaveBtn.textContent = '保存修改';
+    });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = '删除';
+    deleteBtn.addEventListener('click', () => {
+      customSkills = customSkills.filter(s => s.id !== skill.id);
+      saveCustomSkills();
+      renderSkillsList();
+      if (editingSkillId === skill.id) resetSkillForm();
+    });
+
+    actions.appendChild(toggleLabel);
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+
+    header.appendChild(title);
+    header.appendChild(actions);
+
+    const desc = document.createElement('div');
+    desc.className = 'skill-item-desc';
+    desc.textContent = skill.description || '（暂无描述）';
+
+    const hint = document.createElement('div');
+    hint.className = 'skill-hint';
+    hint.textContent = skill.prompt ? `说明: ${skill.prompt}` : '说明: -';
+
+    item.appendChild(header);
+    item.appendChild(desc);
+    item.appendChild(hint);
+    skillsList.appendChild(item);
+  });
+}
+
+function upsertSkillFromForm() {
+  const name = skillNameInput?.value?.trim();
+  const description = skillDescInput?.value?.trim();
+  const prompt = skillPromptInput?.value?.trim();
+
+  if (!name) {
+    if (skillNameInput) skillNameInput.focus();
+    return;
+  }
+
+  if (editingSkillId) {
+    const existing = customSkills.find(skill => skill.id === editingSkillId);
+    if (existing) {
+      existing.name = name;
+      existing.description = description || '';
+      existing.prompt = prompt || '';
+      existing.handle = getSkillHandle({ name });
+    }
+  } else {
+    customSkills.unshift({
+      id: `skill_${Date.now()}`,
+      name,
+      description: description || '',
+      prompt: prompt || '',
+      handle: getSkillHandle({ name }),
+      enabled: true
+    });
+  }
+
+  saveCustomSkills();
+  renderSkillsList();
+  resetSkillForm();
+}
+
 // 当前操作的标签页 ID（支持在新标签页操作）
 let currentTabId = null;
 let lastSubmittedTask = null;
@@ -266,6 +444,9 @@ let chatExecLogs = [];
 let chatExecBubbleEl = null;
 let chatExecLastFlushTs = 0;
 let lastPolledLogIndex = 0;
+let autoSyncTimer = null;
+let autoSyncInFlight = false;
+let lastAutoSyncAt = 0;
 
 function isVerboseLogsEnabled() {
   return !!verboseLogsToggle?.checked;
@@ -401,6 +582,12 @@ document.addEventListener('DOMContentLoaded', () => {
   screenshotBtn = document.getElementById('screenshotBtn');
   fileInput = document.getElementById('fileInput');
   attachmentBar = document.getElementById('attachmentBar');
+  skillNameInput = document.getElementById('skillNameInput');
+  skillDescInput = document.getElementById('skillDescInput');
+  skillPromptInput = document.getElementById('skillPromptInput');
+  skillSaveBtn = document.getElementById('skillSaveBtn');
+  skillCancelBtn = document.getElementById('skillCancelBtn');
+  skillsList = document.getElementById('skillsList');
   
   // 设置欢迎消息时间
   const welcomeTime = document.getElementById('welcomeTime');
@@ -432,6 +619,10 @@ document.addEventListener('DOMContentLoaded', () => {
       chatHistory = result.chatHistory;
     }
   });
+
+  loadCustomSkills();
+  if (skillSaveBtn) skillSaveBtn.addEventListener('click', upsertSkillFromForm);
+  if (skillCancelBtn) skillCancelBtn.addEventListener('click', resetSkillForm);
   
   // 保存配置
   [apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId, verboseLogsToggle].forEach(el => {
@@ -459,17 +650,112 @@ document.addEventListener('DOMContentLoaded', () => {
         content.classList.remove('active');
       });
       document.getElementById(`${tabName}Tab`).classList.add('active');
+
+      if (tabName === 'chat') {
+        startAutoSyncLoop();
+        autoSyncPageContext({ silent: true });
+      } else {
+        stopAutoSyncLoop();
+      }
     });
   });
   
   // 聊天功能
+  function copyTextToClipboard(text) {
+    const content = String(text || '');
+    if (!content) return;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(content).catch(() => {});
+      return;
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = content;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch (e) {
+      // ignore
+    }
+    document.body.removeChild(textarea);
+  }
+
+  function createCodeBlockElement(code, lang) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'code-block';
+
+    const header = document.createElement('div');
+    header.className = 'code-block-header';
+
+    const label = document.createElement('span');
+    label.className = 'lang';
+    label.textContent = lang ? lang : 'TEXT';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.className = 'code-copy-btn';
+    copyBtn.textContent = '复制';
+    copyBtn.addEventListener('click', () => {
+      copyTextToClipboard(code);
+      copyBtn.textContent = '已复制';
+      setTimeout(() => {
+        copyBtn.textContent = '复制';
+      }, 1200);
+    });
+
+    header.appendChild(label);
+    header.appendChild(copyBtn);
+
+    const pre = document.createElement('pre');
+    const codeEl = document.createElement('code');
+    codeEl.textContent = code;
+    pre.appendChild(codeEl);
+
+    wrapper.appendChild(header);
+    wrapper.appendChild(pre);
+    return wrapper;
+  }
+
+  function renderMessageContent(container, text) {
+    if (!container) return;
+    container.innerHTML = '';
+    const rawText = String(text || '');
+    if (!rawText) return;
+
+    const normalized = rawText.replace(/\r\n/g, '\n');
+    const regex = /```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g;
+    let lastIndex = 0;
+    let match;
+    const fragment = document.createDocumentFragment();
+
+    while ((match = regex.exec(normalized)) !== null) {
+      const [full, lang, code] = match;
+      if (match.index > lastIndex) {
+        const textPart = normalized.slice(lastIndex, match.index);
+        fragment.appendChild(document.createTextNode(textPart));
+      }
+
+      const cleanCode = String(code || '').replace(/\n$/, '');
+      fragment.appendChild(createCodeBlockElement(cleanCode, lang));
+      lastIndex = match.index + full.length;
+    }
+
+    if (lastIndex < normalized.length) {
+      fragment.appendChild(document.createTextNode(normalized.slice(lastIndex)));
+    }
+
+    container.appendChild(fragment);
+  }
+
   function addChatMessage(text, isUser = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message ${isUser ? 'user-message' : 'bot-message'}`;
     
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble';
-    bubble.textContent = text;
+    renderMessageContent(bubble, text);
     
     const time = document.createElement('div');
     time.className = 'message-time';
@@ -540,7 +826,7 @@ document.addEventListener('DOMContentLoaded', () => {
     bubble.className = 'message-bubble';
 
     const answerDiv = document.createElement('div');
-    answerDiv.textContent = answer || '';
+    renderMessageContent(answerDiv, answer || '');
 
     const details = document.createElement('details');
     const summary = document.createElement('summary');
@@ -578,6 +864,63 @@ document.addEventListener('DOMContentLoaded', () => {
     pauseBtn.style.display = running && !paused ? 'inline-flex' : 'none';
     resumeBtn.style.display = running && paused ? 'inline-flex' : 'none';
     cancelBtn.style.display = running ? 'inline-flex' : 'none';
+  }
+
+  function isChatTabActive() {
+    const tab = document.getElementById('chatTab');
+    return tab?.classList.contains('active');
+  }
+
+  function shouldAutoSyncPage() {
+    return !!chatIncludePageContextToggle?.checked && isChatTabActive();
+  }
+
+  async function autoSyncPageContext(options = {}) {
+    const force = options.force === true;
+    if (!force && !shouldAutoSyncPage()) return;
+    if (autoSyncInFlight) return;
+    autoSyncInFlight = true;
+    const silent = options.silent !== false;
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'SYNC_PAGE_CONTEXT',
+        includePageContext: true
+      });
+      if (response?.success) {
+        lastAutoSyncAt = Date.now();
+        if (!silent) {
+          const summary = response.summary || {};
+          const clickCount = summary.clickableCount ?? 0;
+          const inputCount = summary.inputCount ?? 0;
+          const scrollCount = summary.scrollableCount ?? 0;
+          addChatMessage(`✅ 页面已同步（按钮:${clickCount} 输入:${inputCount} 滚动区:${scrollCount}）`, false);
+        }
+      } else if (!silent) {
+        addChatMessage(`⚠️ 页面同步失败：${response?.error || '未知错误'}`, false);
+      }
+    } catch (error) {
+      if (!silent) {
+        addChatMessage(`⚠️ 页面同步失败：${error.message}`, false);
+      }
+    } finally {
+      autoSyncInFlight = false;
+    }
+  }
+
+  function startAutoSyncLoop() {
+    if (autoSyncTimer) return;
+    autoSyncTimer = setInterval(() => {
+      if (!shouldAutoSyncPage()) return;
+      const now = Date.now();
+      if (now - lastAutoSyncAt < 5000) return;
+      autoSyncPageContext({ silent: true });
+    }, 6000);
+  }
+
+  function stopAutoSyncLoop() {
+    if (!autoSyncTimer) return;
+    clearInterval(autoSyncTimer);
+    autoSyncTimer = null;
   }
 
   function renderAttachments() {
@@ -753,6 +1096,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 添加用户消息
     addChatMessage(question, true);
+
+    const skillMentions = extractSkillMentions(question);
+    const missingSkills = getMissingSkillMentions(skillMentions);
+    if (missingSkills.length > 0) {
+      addChatMessage(`⚠️ 未找到技能：${missingSkills.map(m => `@${m}`).join('，')}（请先在 Skills 管理中添加）`, false);
+    }
     
     // 更新状态
     updateChatStatus('处理中...', 'thinking');
@@ -775,7 +1124,8 @@ document.addEventListener('DOMContentLoaded', () => {
           includePageContext: includePageContext,
           attachments: attachments,
           allowImages: isImageCapableModel(model.value || 'gpt-4o-mini'),
-          contextText: contextText
+          contextText: contextText,
+          skillMentions: skillMentions
         }, (response) => {
           console.log('📥 收到响应:', response);
 
@@ -829,7 +1179,8 @@ document.addEventListener('DOMContentLoaded', () => {
           model: model.value || 'gpt-4o-mini',
           confluenceToken: confluenceToken?.value || null,
           preferShenzhou: preferShenzhou,
-          contextText: contextText
+          contextText: contextText,
+          skillMentions: skillMentions
         }, (response) => {
           if (chrome.runtime.lastError) {
             console.error('❌ 发送执行任务失败:', chrome.runtime.lastError);
@@ -860,7 +1211,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (isTaskRunning) {
         // 体验优化：自动先停止当前任务，再开始新的
-        pendingExecAfterCancel = { taskWithAttachments, originalText: question, preferShenzhou };
+        pendingExecAfterCancel = { taskWithAttachments, originalText: question, preferShenzhou, skillMentions };
         updateChatStatus('正在停止当前任务...', 'thinking');
         addChatMessage('当前有任务在执行中，我会先停止它再开始新的任务。', false);
         chrome.runtime.sendMessage({ type: 'TASK_CANCEL' }, (resp) => {
@@ -926,28 +1277,24 @@ document.addEventListener('DOMContentLoaded', () => {
       updateChatStatus('同步页面...', 'thinking');
       chatSyncPageButton.disabled = true;
       try {
-        const includePageContext = chatIncludePageContextToggle ? !!chatIncludePageContextToggle.checked : true;
-        const response = await chrome.runtime.sendMessage({
-          type: 'SYNC_PAGE_CONTEXT',
-          includePageContext
-        });
-
-        if (response?.success) {
-          const summary = response.summary || {};
-          const clickCount = summary.clickableCount ?? 0;
-          const inputCount = summary.inputCount ?? 0;
-          const scrollCount = summary.scrollableCount ?? 0;
-          addChatMessage(`✅ 页面已同步（按钮:${clickCount} 输入:${inputCount} 滚动区:${scrollCount}）`, false);
-          updateChatStatus('就绪');
-        } else {
-          addChatMessage(`⚠️ 页面同步失败：${response?.error || '未知错误'}`, false);
-          updateChatStatus('错误', 'error');
-        }
+        await autoSyncPageContext({ silent: false, force: true });
+        updateChatStatus('就绪');
       } catch (error) {
         addChatMessage(`⚠️ 页面同步失败：${error.message}`, false);
         updateChatStatus('错误', 'error');
       } finally {
         chatSyncPageButton.disabled = false;
+      }
+    });
+  }
+
+  if (chatIncludePageContextToggle) {
+    chatIncludePageContextToggle.addEventListener('change', () => {
+      if (chatIncludePageContextToggle.checked) {
+        startAutoSyncLoop();
+        autoSyncPageContext({ silent: true });
+      } else {
+        stopAutoSyncLoop();
       }
     });
   }
@@ -979,6 +1326,31 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         sendChatMessage();
       }
+    });
+
+    chatInput.addEventListener('paste', async (e) => {
+      const items = Array.from(e.clipboardData?.items || []);
+      const imageItems = items.filter(item => String(item.type || '').startsWith('image/'));
+      if (imageItems.length === 0) return;
+
+      e.preventDefault();
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (!file) continue;
+        try {
+          const dataUrl = await readFileAsDataUrl(file);
+          pendingAttachments.push({
+            kind: 'image',
+            name: `clipboard-${new Date().toISOString().replace(/[:.]/g, '-')}.png`,
+            mime: file.type || 'image/png',
+            size: file.size,
+            dataUrl
+          });
+        } catch (error) {
+          addChatMessage(`粘贴图片失败：${error.message}`, false);
+        }
+      }
+      renderAttachments();
     });
   }
   
@@ -1015,6 +1387,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 500);
       }
     });
+  }
+
+  if (shouldAutoSyncPage()) {
+    startAutoSyncLoop();
+    autoSyncPageContext({ silent: true });
   }
 });
 
@@ -1578,6 +1955,12 @@ async function executeTask() {
   setStatus('🔄 执行中...', 'working');
   executeBtn.disabled = true;
   isTaskRunning = true;
+
+  const skillMentions = extractSkillMentions(task);
+  const missingSkills = getMissingSkillMentions(skillMentions);
+  if (missingSkills.length > 0) {
+    log(`⚠️ 未找到技能：${missingSkills.map(m => `@${m}`).join('，')}（请先在 Skills 管理中添加）`, 'warn');
+  }
   
   // 发送任务到 background 执行
   try {
@@ -1585,7 +1968,8 @@ async function executeTask() {
       type: 'START_TASK',
       task: task,
       model: model.value,
-      confluenceToken: confluenceToken.value || null // 传递 Confluence Token
+      confluenceToken: confluenceToken.value || null, // 传递 Confluence Token
+      skillMentions: skillMentions
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('❌ 发送任务失败:', chrome.runtime.lastError);
@@ -1759,7 +2143,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           model: model.value || 'gpt-4o-mini',
           confluenceToken: confluenceToken?.value || null,
           preferShenzhou: pending.preferShenzhou,
-          contextText: buildContextText(12)
+          contextText: buildContextText(12),
+          skillMentions: pending.skillMentions || []
         }, () => {
           updateChatStatus('执行中...', 'thinking');
           startStatusPolling();
@@ -1809,7 +2194,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           model: model.value || 'gpt-4o-mini',
           confluenceToken: confluenceToken?.value || null,
           preferShenzhou: pending.preferShenzhou,
-          contextText: buildContextText(12)
+          contextText: buildContextText(12),
+          skillMentions: pending.skillMentions || []
         }, () => {
           updateChatStatus('执行中...', 'thinking');
           startStatusPolling();
@@ -1865,7 +2251,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           model: model.value || 'gpt-4o-mini',
           confluenceToken: confluenceToken?.value || null,
           preferShenzhou: pending.preferShenzhou,
-          contextText: buildContextText(12)
+          contextText: buildContextText(12),
+          skillMentions: pending.skillMentions || []
         }, () => {
           updateChatStatus('执行中...', 'thinking');
           startStatusPolling();
