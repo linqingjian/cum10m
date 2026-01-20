@@ -296,29 +296,44 @@ function waitForTabComplete(tabId, timeoutMs = 8000) {
   });
 }
 
-const DESTRUCTIVE_KEYWORDS = [
-  '删除',
-  '清空',
-  '清除',
-  '移除',
-  '批量删除',
-  '永久删除',
-  'delete',
-  'drop',
-  'truncate',
-  'remove',
-  'erase'
-];
+const DELETE_VERBS = ['删除', '移除', '清空', '清除', 'delete', 'remove', 'erase'];
+const BLOCK_DELETE_OBJECTS = ['表', '任务', '作业', '节点', 'dag', 'node', 'table', 'task'];
 const SAFE_DELETE_HINTS = ['取消删除', '撤销删除', '恢复', '放弃'];
-const DESTRUCTIVE_SQL_REGEX = /\b(delete|drop|truncate)\b/i;
+const BLOCKED_SQL_REGEXES = [
+  /\bdrop\s+table\b/i,
+  /\bdrop\s+view\b/i
+];
+const DELETE_SENSITIVE_URL_HINTS = [
+  'data-manage/tables',
+  'data-develop/tasks',
+  'data-develop/dev',
+  'data-develop/instances',
+  'dag',
+  'workflow',
+  'node'
+];
 
-function looksDestructiveText(text) {
+function looksBlockedDeleteText(text, tabUrl = '') {
   const raw = String(text || '').trim();
-  if (!raw) return false;
+  if (!raw) return null;
   const lowered = raw.toLowerCase();
-  if (SAFE_DELETE_HINTS.some(k => lowered.includes(k.toLowerCase()))) return false;
-  if (DESTRUCTIVE_SQL_REGEX.test(lowered)) return true;
-  return DESTRUCTIVE_KEYWORDS.some(keyword => lowered.includes(keyword.toLowerCase()));
+  if (SAFE_DELETE_HINTS.some(k => lowered.includes(k.toLowerCase()))) return null;
+
+  for (const regex of BLOCKED_SQL_REGEXES) {
+    if (regex.test(lowered)) return raw.slice(0, 120);
+  }
+
+  const hasDeleteVerb = DELETE_VERBS.some(keyword => lowered.includes(keyword.toLowerCase()));
+  if (!hasDeleteVerb) return null;
+
+  const hasBlockedObject = BLOCK_DELETE_OBJECTS.some(keyword => lowered.includes(keyword.toLowerCase()));
+  if (hasBlockedObject) return raw.slice(0, 120);
+
+  const urlLower = String(tabUrl || '').toLowerCase();
+  const inSensitiveContext = DELETE_SENSITIVE_URL_HINTS.some(hint => urlLower.includes(hint));
+  if (inSensitiveContext) return raw.slice(0, 120);
+
+  return null;
 }
 
 function collectActionTextCandidates(action) {
@@ -345,14 +360,24 @@ function collectActionTextCandidates(action) {
   return candidates.filter(Boolean).map(value => String(value));
 }
 
-function getDestructiveReason(action) {
+function getDestructiveReason(action, context = {}) {
   const candidates = collectActionTextCandidates(action);
+  const tabUrl = context.url || '';
   for (const candidate of candidates) {
-    if (looksDestructiveText(candidate)) {
-      return candidate.slice(0, 120);
-    }
+    const reason = looksBlockedDeleteText(candidate, tabUrl);
+    if (reason) return reason;
   }
   return null;
+}
+
+async function getCurrentTabUrl() {
+  if (!currentTabId) return '';
+  try {
+    const tab = await chrome.tabs.get(currentTabId);
+    return tab?.url || '';
+  } catch (e) {
+    return '';
+  }
 }
 
 function extractTaskNameFromQuery(text) {
@@ -498,7 +523,7 @@ const SKILLS_DOC = `操作：navigate, wait, get_page_info, click, click_at, typ
 分区：date_p格式'20260101'，type_p使用'>=0000'
 SQL：SELECT SUM(cost) AS total_cost, COUNT(*) AS row_count FROM 库.表 WHERE date_p>='开始' AND date_p<='结束' AND type_p>='0000'
 
-规则：只返回一个JSON对象（不要数组/不要markdown/不要解释）；禁止删除/清空/Drop/Truncate 操作
+规则：只返回一个JSON对象（不要数组/不要markdown/不要解释）；禁止删除表/任务/任务节点（包含 Drop Table）
 
 - navigate: {"action":"navigate","url":"https://..."}
 - wait: {"action":"wait","seconds":0.2-2}
@@ -1076,9 +1101,10 @@ async function startTask(task, model, options = {}) {
         continue;
       }
 
-      const destructiveReason = getDestructiveReason(action);
+      const currentUrl = await getCurrentTabUrl();
+      const destructiveReason = getDestructiveReason(action, { url: currentUrl });
       if (destructiveReason) {
-        const blockedMsg = `检测到删除/清空相关操作，已拦截：${destructiveReason}`;
+        const blockedMsg = `检测到删除表/任务/节点相关操作，已拦截：${destructiveReason}`;
         addLog(`🚫 ${blockedMsg}`, 'error');
         throw new Error(blockedMsg);
       }
