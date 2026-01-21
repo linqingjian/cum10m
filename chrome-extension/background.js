@@ -2651,18 +2651,23 @@ async function callAI(messages, model = 'gpt-5.2', timeout = 60000, options = {}
       temperature = undefined; // 不传 temperature，让 API 使用默认值
     }
     
+    const useMaxCompletionTokens = modelLower.includes('gpt-5');
     const requestBody = {
       model: model,
-      messages: messages,
-      max_tokens: maxTokens
+      messages: messages
     };
+    if (useMaxCompletionTokens) {
+      requestBody.max_completion_tokens = maxTokens;
+    } else {
+      requestBody.max_tokens = maxTokens;
+    }
     
     // 只有当 temperature 有值时才添加到请求体
     if (temperature !== undefined) {
       requestBody.temperature = temperature;
-      console.log(`📊 请求参数: model=${model}, temperature=${temperature}, max_tokens=${maxTokens}`);
+      console.log(`📊 请求参数: model=${model}, temperature=${temperature}, ${useMaxCompletionTokens ? 'max_completion_tokens' : 'max_tokens'}=${maxTokens}`);
     } else {
-      console.log(`📊 请求参数: model=${model}, temperature=undefined(使用默认值), max_tokens=${maxTokens}`);
+      console.log(`📊 请求参数: model=${model}, temperature=undefined(使用默认值), ${useMaxCompletionTokens ? 'max_completion_tokens' : 'max_tokens'}=${maxTokens}`);
     }
     
     const response = await fetch(requestUrl, {
@@ -3116,13 +3121,18 @@ async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, option
       temperature = undefined;
     }
 
+    const useMaxCompletionTokens = modelLower.includes('gpt-5');
     const buildBody = (override = {}) => {
       const requestBody = {
         model: model,
         messages: messages,
-        max_tokens: maxTokens,
         ...override
       };
+      if (useMaxCompletionTokens) {
+        requestBody.max_completion_tokens = maxTokens;
+      } else {
+        requestBody.max_tokens = maxTokens;
+      }
       if (temperature !== undefined && override.temperature !== null) {
         requestBody.temperature = temperature;
       }
