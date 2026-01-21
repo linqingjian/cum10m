@@ -2693,15 +2693,6 @@ async function callAI(messages, model = 'gpt-5.2', timeout = 60000, options = {}
       const isUnknownModel = errorCode === 'unknown_model' || /unknown_model/i.test(errorText);
       const fallbackModel = modelLower === 'gpt-5.2' ? 'gpt-5.2-chat' : '';
       console.error('AI 调用失败:', response.status, errorText);
-      let errorCode = '';
-      try {
-        const parsed = JSON.parse(errorText);
-        errorCode = parsed?.error?.code || parsed?.code || '';
-      } catch (e) {
-        // ignore
-      }
-      const isUnknownModel = errorCode === 'unknown_model' || /unknown_model/i.test(errorText);
-      const fallbackModel = modelLower === 'gpt-5.2' ? 'gpt-5.2-chat' : '';
       
       // 检查是否是 temperature 不支持的错误（更宽松的检测）
       const isTemperatureError = errorText.includes('temperature') && 
@@ -3158,6 +3149,15 @@ async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, option
 
     if (!response.ok) {
       const errorText = await response.text();
+      let errorCode = '';
+      try {
+        const parsed = JSON.parse(errorText);
+        errorCode = parsed?.error?.code || parsed?.code || '';
+      } catch (e) {
+        // ignore
+      }
+      const isUnknownModel = errorCode === 'unknown_model' || /unknown_model/i.test(errorText);
+      const fallbackModel = modelLower === 'gpt-5.2' ? 'gpt-5.2-chat' : '';
       const isTemperatureError = errorText.includes('temperature') &&
         (errorText.includes('does not support') ||
          errorText.includes('unsupported') ||
