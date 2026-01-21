@@ -2691,8 +2691,11 @@ async function callAI(messages, model = 'gemini-3-pro-preview', timeout = 60000,
                                   errorText.includes('unsupported') ||
                                   errorText.includes('Only the default') ||
                                   errorText.includes('invalid_request_error'));
+      const isMaxTokensUnsupported = errorText.includes('max_tokens') &&
+                                     (errorText.includes('Unsupported parameter') ||
+                                      errorText.includes('not supported'));
       
-      console.log(`🔍 错误检测: isTemperatureError=${isTemperatureError}, temperature=${temperature}, originalTemperature=${originalTemperature}`);
+      console.log(`🔍 错误检测: isTemperatureError=${isTemperatureError}, isMaxTokensUnsupported=${isMaxTokensUnsupported}, temperature=${temperature}, originalTemperature=${originalTemperature}`);
       
       if (isTemperatureError) {
         // 如果是 temperature 错误，自动重试使用默认值（不传 temperature）
@@ -2727,6 +2730,40 @@ async function callAI(messages, model = 'gemini-3-pro-preview', timeout = 60000,
         }
         
         // 使用重试的响应继续处理
+        data = await retryResponse.json();
+      } else if (isMaxTokensUnsupported) {
+        console.log('⚠️ 检测到 max_tokens 不支持，改用 max_completion_tokens 重试');
+        controller = new AbortController();
+        if (currentTask) activeTaskAbortControllers.add(controller);
+        const retryTimeoutId = setTimeout(() => controller.abort(), timeout);
+
+        const retryBody = {
+          model: model,
+          messages: messages,
+          max_completion_tokens: maxTokens
+        };
+        if (temperature !== undefined) {
+          retryBody.temperature = temperature;
+        }
+
+        const retryResponse = await fetch(requestUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${API_TOKEN}`,
+            'Content-Type': 'application/json',
+            'X-Mtcc-Client': 'shenzhou-assistant-extension'
+          },
+          body: JSON.stringify(retryBody),
+          signal: controller.signal
+        });
+
+        clearTimeout(retryTimeoutId);
+
+        if (!retryResponse.ok) {
+          const retryErrorText = await retryResponse.text();
+          throw new Error(`AI 调用失败: ${retryResponse.status} - ${retryErrorText.substring(0, 200)}`);
+        }
+
         data = await retryResponse.json();
       } else {
         throw new Error(`AI 调用失败: ${response.status} - ${errorText.substring(0, 200)}`);
@@ -3104,9 +3141,22 @@ async function callAIStream(messages, model = 'gemini-3-pro-preview', timeout = 
          errorText.includes('unsupported') ||
          errorText.includes('Only the default') ||
          errorText.includes('invalid_request_error'));
+      const isMaxTokensUnsupported = errorText.includes('max_tokens') &&
+        (errorText.includes('Unsupported parameter') || errorText.includes('not supported'));
       if (isTemperatureError && temperature !== undefined) {
         temperature = undefined;
         response = await runRequest(buildBody({ stream: true, temperature: null }));
+      } else if (isMaxTokensUnsupported) {
+        const retryBody = {
+          model: model,
+          messages: messages,
+          max_completion_tokens: maxTokens,
+          stream: true
+        };
+        if (temperature !== undefined) {
+          retryBody.temperature = temperature;
+        }
+        response = await runRequest(retryBody);
       } else {
         throw new Error(`AI 调用失败 (${response.status}): ${errorText.substring(0, 200)}`);
       }
