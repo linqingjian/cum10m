@@ -10,10 +10,28 @@ const CUSTOM_SKILLS_STORAGE_KEY = storageKey('customSkills');
 const DEFAULT_API_URL = 'https://model-router.meitu.com/v1';
 const GITHUB_REPO_ZIP_URL = 'https://codeload.github.com/linqingjian/cum10m/zip/refs/heads/main';
 const GITHUB_MANIFEST_URL = 'https://raw.githubusercontent.com/linqingjian/cum10m/main/chrome-extension/manifest.json';
+const MODEL_MAX_TOKENS = {
+  'gpt-5.2': 32768,
+  'gpt-5.2-chat': 32768,
+  'glm-4.7': 128000,
+  'gpt-4o': 16384,
+  'deepseek-reasoner': 32768,
+  'deepseek-v3.2': 32768,
+  'minimax-m2.1': 65536
+};
 const CHAT_SESSIONS_STORAGE_KEY = storageKey('chatSessions');
 const ACTIVE_SESSION_STORAGE_KEY = storageKey('activeSessionId');
 const DEFAULT_SESSION_TITLE = '新对话';
 const WELCOME_MESSAGE = '你好！我是数仓小助手，可以帮你查询数据、执行SQL、查看表结构、分析任务、搜索文档等。有什么可以帮你的吗？';
+
+function getModelMaxTokens(modelName) {
+  const lower = String(modelName || '').toLowerCase().trim();
+  if (!lower) return 2000;
+  if (MODEL_MAX_TOKENS[lower]) return MODEL_MAX_TOKENS[lower];
+  if (lower.startsWith('gpt-5')) return 32768;
+  if (lower.startsWith('gpt-4o')) return 16384;
+  return 2000;
+}
 
 function copyTextToClipboard(text) {
   const content = String(text || '');
@@ -2333,14 +2351,16 @@ async function callAI(messages) {
 
     const attemptCall = async (useMaxCompletionTokens, allowRetry = true, overrideModel = null) => {
       const effectiveModel = overrideModel || modelName;
+      const modelLimit = getModelMaxTokens(effectiveModel);
+      const maxTokens = modelLimit;
       const body = {
         model: effectiveModel,
         messages: messages
       };
       if (useMaxCompletionTokens) {
-        body.max_completion_tokens = 65536;
+        body.max_completion_tokens = maxTokens;
       } else {
-        body.max_tokens = 65536;
+        body.max_tokens = maxTokens;
       }
 
       const response = await fetch(`${apiBase}/chat/completions`, {

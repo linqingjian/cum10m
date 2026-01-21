@@ -14,6 +14,25 @@ let API_URL = DEFAULT_API_BASE_URL;
 let WEBHOOK_URL = '';
 const DEBUG_AI = false;
 
+const MODEL_MAX_TOKENS = {
+  'gpt-5.2': 32768,
+  'gpt-5.2-chat': 32768,
+  'glm-4.7': 128000,
+  'gpt-4o': 16384,
+  'deepseek-reasoner': 32768,
+  'deepseek-v3.2': 32768,
+  'minimax-m2.1': 65536
+};
+
+function getModelMaxTokens(modelName) {
+  const lower = String(modelName || '').toLowerCase().trim();
+  if (!lower) return 2000;
+  if (MODEL_MAX_TOKENS[lower]) return MODEL_MAX_TOKENS[lower];
+  if (lower.startsWith('gpt-5')) return 32768;
+  if (lower.startsWith('gpt-4o')) return 16384;
+  return 2000;
+}
+
 // Confluence API 配置
 // Confluence Personal Access Token（来自 meitu-mcp 配置）
 let CONFLUENCE_API_TOKEN = '';
@@ -2630,7 +2649,9 @@ async function callAI(messages, model = 'gpt-5.2', timeout = 60000, options = {}
     // 仅任务执行链路注册可取消的 controller（聊天不影响）
     if (currentTask) activeTaskAbortControllers.add(controller);
     const timeoutId = setTimeout(() => controller.abort(), timeout);
-    const maxTokens = typeof options.max_tokens === 'number' ? options.max_tokens : 2000;
+    const modelLimit = getModelMaxTokens(modelLower);
+    const requestedTokens = typeof options.max_tokens === 'number' ? options.max_tokens : modelLimit;
+    const maxTokens = Math.min(requestedTokens, modelLimit);
     
     // 根据模型类型决定是否使用 temperature 参数
     // 某些模型（如 GPT-5）不支持低 temperature，只支持默认值 1
@@ -3110,7 +3131,9 @@ async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, option
     }
 
     const requestUrl = normalizeApiUrl(API_URL);
-    const maxTokens = typeof options.max_tokens === 'number' ? options.max_tokens : 2000;
+    const modelLimit = getModelMaxTokens(modelLower);
+    const requestedTokens = typeof options.max_tokens === 'number' ? options.max_tokens : modelLimit;
+    const maxTokens = Math.min(requestedTokens, modelLimit);
 
     const modelLower = String(model || '').toLowerCase();
     const mayNotSupportLowTemperature = modelLower.includes('gpt-5') ||
