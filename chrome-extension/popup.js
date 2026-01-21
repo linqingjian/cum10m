@@ -603,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // 加载保存的配置
-  const configKeys = ['apiUrl', 'apiToken', 'model', 'webhookUrl', 'confluenceToken', 'weeklyReportRootPageId', 'verboseLogs'];
+  const configKeys = ['apiUrl', 'apiToken', 'model', 'webhookUrl', 'confluenceToken', 'weeklyReportRootPageId', 'verboseLogs', 'chatShowPlan'];
   chrome.storage.local.get(configKeys.flatMap(key => [key, storageKey(key)]), (result) => {
     const apiUrlValue = readStoredValue(result, 'apiUrl');
     const apiTokenValue = readStoredValue(result, 'apiToken');
@@ -612,6 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const confluenceValue = readStoredValue(result, 'confluenceToken');
     const weeklyRootValue = readStoredValue(result, 'weeklyReportRootPageId');
     const verboseLogsValue = readStoredValue(result, 'verboseLogs');
+    const chatShowPlanValue = readStoredValue(result, 'chatShowPlan');
 
     if (apiUrl) apiUrl.value = apiUrlValue || DEFAULT_API_URL;
     if (apiTokenValue) apiToken.value = apiTokenValue;
@@ -620,6 +621,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (confluenceValue) confluenceToken.value = confluenceValue;
     if (weeklyRootValue && weeklyReportRootPageId) weeklyReportRootPageId.value = weeklyRootValue;
     if (typeof verboseLogsValue === 'boolean' && verboseLogsToggle) verboseLogsToggle.checked = verboseLogsValue;
+    if (chatShowPlanToggle) {
+      if (typeof chatShowPlanValue === 'boolean') {
+        chatShowPlanToggle.checked = chatShowPlanValue;
+      } else {
+        chatShowPlanToggle.checked = true;
+      }
+    }
   });
 
   // 加载会话上下文
@@ -634,7 +642,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (skillCancelBtn) skillCancelBtn.addEventListener('click', resetSkillForm);
   
   // 保存配置
-  [apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId, verboseLogsToggle].forEach(el => {
+  [apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId, verboseLogsToggle, chatShowPlanToggle].forEach(el => {
     if (el) el.addEventListener('change', saveConfig);
   });
   
@@ -896,6 +904,10 @@ document.addEventListener('DOMContentLoaded', () => {
     details.appendChild(summary);
     details.appendChild(planDiv);
 
+    if (chatShowPlanToggle?.checked) {
+      details.open = true;
+    }
+
     bubble.appendChild(answerDiv);
     bubble.appendChild(details);
 
@@ -929,6 +941,9 @@ document.addEventListener('DOMContentLoaded', () => {
       planDiv.textContent = plan;
       details.appendChild(summary);
       details.appendChild(planDiv);
+      if (chatShowPlanToggle?.checked) {
+        details.open = true;
+      }
       bubble.appendChild(details);
     }
   }
@@ -1608,7 +1623,8 @@ function saveConfig() {
     webhookUrl: webhookUrl.value,
     confluenceToken: confluenceToken.value,
     weeklyReportRootPageId: weeklyReportRootPageId?.value || '',
-    verboseLogs: !!verboseLogsToggle?.checked
+    verboseLogs: !!verboseLogsToggle?.checked,
+    chatShowPlan: !!chatShowPlanToggle?.checked
   };
 
   const payload = {};
