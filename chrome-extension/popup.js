@@ -780,6 +780,55 @@ document.addEventListener('DOMContentLoaded', () => {
     pushChatHistory(isUser ? 'user' : 'assistant', text);
   }
 
+  function addUserMessageWithAttachments(text, attachments) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'chat-message user-message';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+
+    if (text) {
+      const textDiv = document.createElement('div');
+      renderMessageContent(textDiv, text);
+      bubble.appendChild(textDiv);
+    }
+
+    const list = Array.isArray(attachments) ? attachments : [];
+    if (list.length > 0) {
+      const attachmentsDiv = document.createElement('div');
+      attachmentsDiv.className = 'message-attachments';
+      list.forEach(att => {
+        if (att.kind === 'image' && att.dataUrl) {
+          const img = document.createElement('img');
+          img.className = 'message-attachment-image';
+          img.src = att.dataUrl;
+          img.alt = att.name || 'image';
+          attachmentsDiv.appendChild(img);
+        } else {
+          const fileChip = document.createElement('div');
+          fileChip.className = 'message-attachment-file';
+          fileChip.textContent = `📎 ${att.name || '附件'}`;
+          attachmentsDiv.appendChild(fileChip);
+        }
+      });
+      bubble.appendChild(attachmentsDiv);
+    }
+
+    const time = document.createElement('div');
+    time.className = 'message-time';
+    time.textContent = new Date().toLocaleTimeString('zh-CN');
+
+    messageDiv.appendChild(bubble);
+    messageDiv.appendChild(time);
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    const names = list.map(att => att.name || '附件').join(', ');
+    const historyText = text || (list.some(att => att.kind === 'image') ? '（发送图片）' : '（发送附件）');
+    const historyEntry = names ? `${historyText} [附件: ${names}]` : historyText;
+    pushChatHistory('user', historyEntry);
+  }
+
   function createUpdatableBotMessage(initialText) {
     const messageDiv = document.createElement('div');
     messageDiv.className = 'chat-message bot-message';
@@ -1223,8 +1272,13 @@ document.addEventListener('DOMContentLoaded', () => {
       question = hasImage ? '请结合图片回答' : '请结合附件回答';
     }
     
-    // 添加用户消息
-    addChatMessage(question, true);
+    const attachments = pendingAttachments.slice(0);
+
+    if (attachments.length > 0) {
+      addUserMessageWithAttachments(question, attachments);
+    } else {
+      addChatMessage(question, true);
+    }
 
     const skillMentions = extractSkillMentions(question);
     const missingSkills = getMissingSkillMentions(skillMentions);
@@ -1240,7 +1294,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const mode = chatModeSelect?.value || 'chat';
       const showPlan = !!chatShowPlanToggle?.checked;
       const includePageContext = chatIncludePageContextToggle ? !!chatIncludePageContextToggle.checked : true;
-      const attachments = pendingAttachments.slice(0);
       const contextText = buildContextText(12);
 
       if (mode === 'chat') {
