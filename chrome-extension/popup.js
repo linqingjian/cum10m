@@ -380,10 +380,13 @@ function renderChatSessionList() {
     meta.className = 'chat-session-item-meta';
     const timeText = document.createElement('span');
     const ts = session.updatedAt || session.createdAt;
-    timeText.textContent = ts ? new Date(ts).toLocaleTimeString('zh-CN') : '';
+    timeText.textContent = ts
+      ? new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      : '';
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
-    deleteBtn.textContent = '删除';
+    deleteBtn.textContent = '×';
+    deleteBtn.title = '删除';
     deleteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       chatSessions = chatSessions.filter(s => s.id !== session.id);
