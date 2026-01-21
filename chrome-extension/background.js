@@ -13,6 +13,7 @@ let API_TOKEN = '';
 let API_URL = DEFAULT_API_BASE_URL;
 let WEBHOOK_URL = '';
 const DEBUG_AI = false;
+let MAX_STEPS = 15;
 
 const MODEL_MAX_TOKENS = {
   'gpt-5.2': 32768,
@@ -71,23 +72,29 @@ async function loadConfigFromStorage() {
       'webhookUrl',
       'confluenceToken',
       'weeklyReportRootPageId',
+      'maxSteps',
       storageKey('apiToken'),
       storageKey('apiUrl'),
       storageKey('webhookUrl'),
       storageKey('confluenceToken'),
       storageKey('weeklyReportRootPageId'),
+      storageKey('maxSteps'),
     ], (result) => {
       const apiTokenValue = readStoredValue(result, 'apiToken');
       const apiUrlValue = readStoredValue(result, 'apiUrl');
       const webhookValue = readStoredValue(result, 'webhookUrl');
       const confluenceValue = readStoredValue(result, 'confluenceToken');
       const weeklyRootValue = readStoredValue(result, 'weeklyReportRootPageId');
+      const maxStepsValue = readStoredValue(result, 'maxSteps');
 
       if (apiTokenValue) API_TOKEN = apiTokenValue;
       if (apiUrlValue) API_URL = apiUrlValue;
       if (webhookValue) WEBHOOK_URL = webhookValue;
       if (confluenceValue) CONFLUENCE_API_TOKEN = confluenceValue;
       if (weeklyRootValue) WEEKLY_REPORT_ROOT_PAGE_ID = weeklyRootValue;
+      if (Number.isFinite(Number(maxStepsValue))) {
+        MAX_STEPS = Math.max(1, Number(maxStepsValue));
+      }
 
       resolve();
     });
@@ -955,7 +962,7 @@ async function startTask(task, model, options = {}) {
     { role: 'system', content: systemPrompt }
   ];
   
-  let maxSteps = 100; // 增加到100步，允许更复杂的任务
+  const maxSteps = Math.min(Math.max(Number(MAX_STEPS || 15), 1), 200);
   let step = 0;
   let waitCount = 0; // 连续 wait 次数
   let lastActions = []; // 记录最近的操作序列，用于检测循环
@@ -2649,13 +2656,12 @@ async function callAI(messages, model = 'gpt-5.2', timeout = 60000, options = {}
     // 仅任务执行链路注册可取消的 controller（聊天不影响）
     if (currentTask) activeTaskAbortControllers.add(controller);
     const timeoutId = setTimeout(() => controller.abort(), timeout);
-    const modelLimit = getModelMaxTokens(modelLower);
-    const requestedTokens = typeof options.max_tokens === 'number' ? options.max_tokens : modelLimit;
-    const maxTokens = Math.min(requestedTokens, modelLimit);
-    
     // 根据模型类型决定是否使用 temperature 参数
     // 某些模型（如 GPT-5）不支持低 temperature，只支持默认值 1
     const modelLower = String(model || '').toLowerCase();
+    const modelLimit = getModelMaxTokens(modelLower);
+    const requestedTokens = typeof options.max_tokens === 'number' ? options.max_tokens : modelLimit;
+    const maxTokens = Math.min(requestedTokens, modelLimit);
     
     // 检测可能不支持低 temperature 的模型
     // 包括：gpt-5, gpt-5-*, 以及其他可能不支持的模型
@@ -3131,11 +3137,10 @@ async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, option
     }
 
     const requestUrl = normalizeApiUrl(API_URL);
+    const modelLower = String(model || '').toLowerCase();
     const modelLimit = getModelMaxTokens(modelLower);
     const requestedTokens = typeof options.max_tokens === 'number' ? options.max_tokens : modelLimit;
     const maxTokens = Math.min(requestedTokens, modelLimit);
-
-    const modelLower = String(model || '').toLowerCase();
     const mayNotSupportLowTemperature = modelLower.includes('gpt-5') ||
                                          modelLower.startsWith('gpt-5') ||
                                          modelLower === 'gpt-5';
