@@ -1845,6 +1845,15 @@ ${importantLines.join('\n')}`;
       console.log('✅ AI 回复生成成功，长度:', responseText.length || 0);
 
       if (!responseText) {
+        if (streamEnabled) {
+          if (onStreamStatus) onStreamStatus('流式响应为空，改用普通模式...');
+          const fallbackText = await callAI(finalMessages, model, timeout, { max_tokens: 1800, temperature: 0.2 });
+          const trimmedFallback = String(fallbackText || '').trim();
+          if (!trimmedFallback) {
+            throw new Error('AI 返回了空响应');
+          }
+          return trimmedFallback;
+        }
         throw new Error('AI 返回了空响应');
       }
 
