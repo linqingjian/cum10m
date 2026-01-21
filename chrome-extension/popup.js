@@ -109,6 +109,35 @@ function updateChatStatus(text, type = '') {
   chatStatus.className = `chat-status ${type}`;
 }
 
+function setChatControlButtons({ running = false, paused = false } = {}) {
+  if (!pauseBtn || !resumeBtn || !cancelBtn) return;
+  if (!isChatMode) {
+    pauseBtn.style.display = 'none';
+    resumeBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
+    return;
+  }
+  if (!running) {
+    pauseBtn.style.display = 'none';
+    resumeBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
+    return;
+  }
+  cancelBtn.style.display = 'inline-flex';
+  if (paused) {
+    pauseBtn.style.display = 'none';
+    resumeBtn.style.display = 'inline-flex';
+  } else {
+    pauseBtn.style.display = 'inline-flex';
+    resumeBtn.style.display = 'none';
+  }
+}
+
+function syncChatMode() {
+  isChatMode = (chatModeSelect?.value || 'chat') === 'chat';
+  setChatControlButtons({ running: chatExecActive, paused: false });
+}
+
 async function fetchLatestExtensionVersion() {
   const fallbackVersion = chrome.runtime.getManifest()?.version || 'latest';
   try {
@@ -890,6 +919,7 @@ let lastAutoSyncAt = 0;
 let chatStreamRequestId = null;
 let chatStreamBuffer = '';
 let chatStreamBubbleEl = null;
+let isChatMode = true;
 
 function isVerboseLogsEnabled() {
   return !!verboseLogsToggle?.checked;
@@ -1067,11 +1097,12 @@ document.addEventListener('DOMContentLoaded', () => {
         chatShowPlanToggle.checked = true;
       }
     }
-    if (themeSelect) {
-      themeSelect.value = themeValue || 'light';
-      applyTheme(themeSelect.value || 'light');
-    }
-  });
+  if (themeSelect) {
+    themeSelect.value = themeValue || 'light';
+    applyTheme(themeSelect.value || 'light');
+  }
+  syncChatMode();
+});
 
   // 加载会话上下文
   loadChatSessions();
@@ -1080,6 +1111,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (sessionToggle && chatSidebar) {
     sessionToggle.addEventListener('click', () => {
       chatSidebar.classList.toggle('hidden');
+    });
+  }
+  if (chatModeSelect) {
+    chatModeSelect.addEventListener('change', () => {
+      syncChatMode();
     });
   }
   if (newChatBtn) {
@@ -1099,6 +1135,8 @@ document.addEventListener('DOMContentLoaded', () => {
   [apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId, verboseLogsToggle, chatShowPlanToggle, themeSelect].forEach(el => {
     if (el) el.addEventListener('change', saveConfig);
   });
+
+  setChatControlButtons({ running: false, paused: false });
   
   // 快捷按钮
   document.querySelectorAll('.quick-btn').forEach(btn => {
@@ -1366,6 +1404,8 @@ document.addEventListener('DOMContentLoaded', () => {
         updateChatStatus('错误', 'error');
         chatSendBtn && (chatSendBtn.disabled = false);
         addChatMessage(`自动开始新任务失败：${chrome.runtime.lastError.message}`, false);
+        chatExecActive = false;
+        setChatControlButtons({ running: false, paused: false });
         return;
       }
       updateChatStatus('执行中...', 'thinking');
@@ -1736,6 +1776,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chatExecLogs = [];
         chatExecBubbleEl = createUpdatableBotMessage('收到，我开始在浏览器里执行…\n（执行日志会在这里滚动输出）');
         chatExecLastFlushTs = 0;
+        setChatControlButtons({ running: true, paused: false });
 
         if (taskInput) taskInput.value = taskWithAttachments;
         lastSubmittedTask = originalText;
@@ -2740,11 +2781,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('📥 Popup 收到消息:', message.type, message);
   
   if (message.type === 'LOG_UPDATE') {
-    if (outputArea && message.log) {
+    const shouldShowInLogs = !isChatMode;
+    if (shouldShowInLogs && outputArea && message.log) {
       if (shouldShowLogItem(message.log)) {
         log(message.log.message, message.log.type || 'info');
       }
-    } else {
+    } else if (!isChatMode && !outputArea) {
       console.warn('⚠️ 日志更新失败: outputArea 或 log 不存在', { outputArea: !!outputArea, log: message.log });
     }
     if (message.log && chatExecActive) {
@@ -2764,6 +2806,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     executeBtn.disabled = false;
     isTaskRunning = false;
     setTaskControlButtons({ running: false, paused: false });
+    setChatControlButtons({ running: false, paused: false });
 
     // 保存结果用于发送到群（新逻辑：后台执行路径也需要保存）
     const taskText = lastSubmittedTask || taskInput?.value?.trim() || '';
@@ -2778,6 +2821,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         chatExecBubbleEl.textContent = `✅ 任务完成\n\n结果：\n${message.result || ''}`;
       }
       chatExecActive = false;
+      setChatControlButtons({ running: false, paused: false });
       chatSendBtn && (chatSendBtn.disabled = false);
       updateChatStatus('就绪');
     }
@@ -2795,11 +2839,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     executeBtn.disabled = false;
     isTaskRunning = false;
     setTaskControlButtons({ running: false, paused: false });
+    setChatControlButtons({ running: false, paused: false });
 
     if (chatExecActive) {
       appendChatExecLog(`❌ ${errText}`);
       if (chatExecBubbleEl) chatExecBubbleEl.textContent = `❌ 执行失败\n\n${errText}`;
       chatExecActive = false;
+      setChatControlButtons({ running: false, paused: false });
       chatSendBtn && (chatSendBtn.disabled = false);
       updateChatStatus('错误', 'error');
     }
