@@ -13,6 +13,94 @@ const ACTIVE_SESSION_STORAGE_KEY = storageKey('activeSessionId');
 const DEFAULT_SESSION_TITLE = '新对话';
 const WELCOME_MESSAGE = '你好！我是数仓小助手，可以帮你查询数据、执行SQL、查看表结构、分析任务、搜索文档等。有什么可以帮你的吗？';
 
+function copyTextToClipboard(text) {
+  const content = String(text || '');
+  if (!content) return;
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(content).catch(() => {});
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = content;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+  } catch (e) {
+    // ignore
+  }
+  document.body.removeChild(textarea);
+}
+
+function createCodeBlockElement(code, lang) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'code-block';
+
+  const header = document.createElement('div');
+  header.className = 'code-block-header';
+
+  const label = document.createElement('span');
+  label.className = 'lang';
+  label.textContent = lang ? lang : 'TEXT';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'code-copy-btn';
+  copyBtn.textContent = '复制';
+  copyBtn.addEventListener('click', () => {
+    copyTextToClipboard(code);
+    copyBtn.textContent = '已复制';
+    setTimeout(() => {
+      copyBtn.textContent = '复制';
+    }, 1200);
+  });
+
+  header.appendChild(label);
+  header.appendChild(copyBtn);
+
+  const pre = document.createElement('pre');
+  const codeEl = document.createElement('code');
+  codeEl.textContent = code;
+  pre.appendChild(codeEl);
+
+  wrapper.appendChild(header);
+  wrapper.appendChild(pre);
+  return wrapper;
+}
+
+function renderMessageContent(container, text) {
+  if (!container) return;
+  container.innerHTML = '';
+  const rawText = String(text || '');
+  if (!rawText) return;
+
+  const normalized = rawText.replace(/\r\n/g, '\n');
+  const regex = /```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match;
+  const fragment = document.createDocumentFragment();
+
+  while ((match = regex.exec(normalized)) !== null) {
+    const [full, lang, code] = match;
+    if (match.index > lastIndex) {
+      const textPart = normalized.slice(lastIndex, match.index);
+      fragment.appendChild(document.createTextNode(textPart));
+    }
+
+    const cleanCode = String(code || '').replace(/\n$/, '');
+    fragment.appendChild(createCodeBlockElement(cleanCode, lang));
+    lastIndex = match.index + full.length;
+  }
+
+  if (lastIndex < normalized.length) {
+    fragment.appendChild(document.createTextNode(normalized.slice(lastIndex)));
+  }
+
+  container.appendChild(fragment);
+}
+
 // 系统提示词 - 整合完整 Skills
 const SYSTEM_PROMPT = `你是美图公司数仓团队的 AI 助手 "数仓小助手"，负责在神舟大数据平台上执行数据查询和任务管理。
 
@@ -999,95 +1087,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   
-  // 聊天功能
-  function copyTextToClipboard(text) {
-    const content = String(text || '');
-    if (!content) return;
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(content).catch(() => {});
-      return;
-    }
-    const textarea = document.createElement('textarea');
-    textarea.value = content;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.appendChild(textarea);
-    textarea.select();
-    try {
-      document.execCommand('copy');
-    } catch (e) {
-      // ignore
-    }
-    document.body.removeChild(textarea);
-  }
-
-  function createCodeBlockElement(code, lang) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'code-block';
-
-    const header = document.createElement('div');
-    header.className = 'code-block-header';
-
-    const label = document.createElement('span');
-    label.className = 'lang';
-    label.textContent = lang ? lang : 'TEXT';
-
-    const copyBtn = document.createElement('button');
-    copyBtn.type = 'button';
-    copyBtn.className = 'code-copy-btn';
-    copyBtn.textContent = '复制';
-    copyBtn.addEventListener('click', () => {
-      copyTextToClipboard(code);
-      copyBtn.textContent = '已复制';
-      setTimeout(() => {
-        copyBtn.textContent = '复制';
-      }, 1200);
-    });
-
-    header.appendChild(label);
-    header.appendChild(copyBtn);
-
-    const pre = document.createElement('pre');
-    const codeEl = document.createElement('code');
-    codeEl.textContent = code;
-    pre.appendChild(codeEl);
-
-    wrapper.appendChild(header);
-    wrapper.appendChild(pre);
-    return wrapper;
-  }
-
-  function renderMessageContent(container, text) {
-    if (!container) return;
-    container.innerHTML = '';
-    const rawText = String(text || '');
-    if (!rawText) return;
-
-    const normalized = rawText.replace(/\r\n/g, '\n');
-    const regex = /```([a-zA-Z0-9_+-]*)\n([\s\S]*?)```/g;
-    let lastIndex = 0;
-    let match;
-    const fragment = document.createDocumentFragment();
-
-    while ((match = regex.exec(normalized)) !== null) {
-      const [full, lang, code] = match;
-      if (match.index > lastIndex) {
-        const textPart = normalized.slice(lastIndex, match.index);
-        fragment.appendChild(document.createTextNode(textPart));
-      }
-
-      const cleanCode = String(code || '').replace(/\n$/, '');
-      fragment.appendChild(createCodeBlockElement(cleanCode, lang));
-      lastIndex = match.index + full.length;
-    }
-
-    if (lastIndex < normalized.length) {
-      fragment.appendChild(document.createTextNode(normalized.slice(lastIndex)));
-    }
-
-    container.appendChild(fragment);
-  }
-
   function addChatMessage(text, isUser = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `chat-message ${isUser ? 'user-message' : 'bot-message'}`;
@@ -2248,57 +2247,77 @@ async function executeAction(action) {
 // 调用 AI
 async function callAI(messages) {
   try {
-    log(`📡 调用模型: ${model.value}`, 'action');
-    
-    const response = await fetch('https://model-router.meitu.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiToken.value}`,
-        'Content-Type': 'application/json',
-        'X-Mtcc-Client': 'shenzhou-assistant-extension'
-      },
-      body: JSON.stringify({
-        model: model.value,
-        messages: messages,
-        max_tokens: 65536  // Gemini 推理模型最大 token
-      })
-    });
-    
-    const responseText = await response.text();
-    
-    if (!response.ok) {
-      console.error('AI 调用失败:', responseText);
-      throw new Error(`AI 调用失败 (${response.status}): ${responseText.substring(0, 100)}`);
-    }
-    
-    let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch (e) {
-      throw new Error(`AI 响应解析失败: ${responseText.substring(0, 100)}`);
-    }
-    
-    // 检查响应格式
-    if (!data.choices || !data.choices[0]) {
-      console.error('AI 响应格式异常:', data);
-      throw new Error(`AI 响应格式异常: ${JSON.stringify(data).substring(0, 200)}`);
-    }
-    
-    const choice = data.choices[0];
-    
-    // 检查是否被截断
-    if (choice.finish_reason === 'length') {
-      console.warn('AI 响应被截断');
-    }
-    
-    // 获取内容（可能在 message.content 或 message.reasoning_content）
-    const content = choice.message?.content || choice.message?.reasoning_content || '';
-    
-    if (!content) {
-      throw new Error(`AI 未返回内容 (finish_reason: ${choice.finish_reason})`);
-    }
-    
-    return content;
+    const modelName = model.value || 'gpt-5.2';
+    const apiBase = apiUrl?.value?.trim() || DEFAULT_API_URL;
+    log(`📡 调用模型: ${modelName}`, 'action');
+
+    const attemptCall = async (useMaxCompletionTokens, allowRetry = true) => {
+      const body = {
+        model: modelName,
+        messages: messages
+      };
+      if (useMaxCompletionTokens) {
+        body.max_completion_tokens = 65536;
+      } else {
+        body.max_tokens = 65536;
+      }
+
+      const response = await fetch(`${apiBase}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken.value}`,
+          'Content-Type': 'application/json',
+          'X-Mtcc-Client': 'shenzhou-assistant-extension'
+        },
+        body: JSON.stringify(body)
+      });
+
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        console.error('AI 调用失败:', responseText);
+        if (allowRetry && response.status === 400) {
+          const lower = responseText.toLowerCase();
+          const mentionsBoth = lower.includes('max_tokens') && lower.includes('max_completion_tokens');
+          if (mentionsBoth) {
+            return attemptCall(!useMaxCompletionTokens, false);
+          }
+        }
+        throw new Error(`AI 调用失败 (${response.status}): ${responseText.substring(0, 100)}`);
+      }
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        throw new Error(`AI 响应解析失败: ${responseText.substring(0, 100)}`);
+      }
+
+      // 检查响应格式
+      if (!data.choices || !data.choices[0]) {
+        console.error('AI 响应格式异常:', data);
+        throw new Error(`AI 响应格式异常: ${JSON.stringify(data).substring(0, 200)}`);
+      }
+
+      const choice = data.choices[0];
+
+      // 检查是否被截断
+      if (choice.finish_reason === 'length') {
+        console.warn('AI 响应被截断');
+      }
+
+      // 获取内容（可能在 message.content 或 message.reasoning_content）
+      const content = choice.message?.content || choice.message?.reasoning_content || '';
+
+      if (!content) {
+        throw new Error(`AI 未返回内容 (finish_reason: ${choice.finish_reason})`);
+      }
+
+      return content;
+    };
+
+    const preferMaxCompletionTokens = /gpt-5/i.test(modelName);
+    return await attemptCall(preferMaxCompletionTokens, true);
   } catch (error) {
     console.error('callAI 错误:', error);
     throw error;
