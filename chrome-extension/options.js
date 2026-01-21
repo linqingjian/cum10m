@@ -23,11 +23,14 @@ const elements = {
   status: document.getElementById('status'),
 };
 
+const GITHUB_REPO_ZIP_URL = 'https://codeload.github.com/linqingjian/cum10m/zip/refs/heads/main';
+const GITHUB_MANIFEST_URL = 'https://raw.githubusercontent.com/linqingjian/cum10m/main/chrome-extension/manifest.json';
+
 // 默认配置
 const DEFAULT_CONFIG = {
   apiUrl: 'https://model-router.meitu.com/v1',
   apiToken: '',
-  model: 'gpt-4o',
+  model: 'gpt-5.2',
   webhookUrl: '',
   confluenceToken: '',
   confluenceUsername: '',
@@ -57,7 +60,7 @@ async function loadConfig() {
     
     elements.apiUrl.value = DEFAULT_CONFIG.apiUrl || '';
     elements.apiToken.value = DEFAULT_CONFIG.apiToken || '';
-    elements.model.value = DEFAULT_CONFIG.model || 'gpt-4o';
+    elements.model.value = DEFAULT_CONFIG.model || 'gpt-5.2';
     elements.webhookUrl.value = DEFAULT_CONFIG.webhookUrl || '';
     elements.confluenceToken.value = DEFAULT_CONFIG.confluenceToken || '';
     elements.confluenceUsername.value = DEFAULT_CONFIG.confluenceUsername || '';
@@ -113,24 +116,46 @@ async function testConnection() {
   showStatus('正在测试连接...', 'info');
 
   try {
-    const response = await fetch(requestUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiToken}`,
-      },
-      body: JSON.stringify({
-        model: model || 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: 'Hello' }],
-        max_tokens: 10,
-      }),
-    });
+    const attemptTest = async (useMaxCompletionTokens, allowRetry = true) => {
+      const body = {
+        model: model || 'gpt-5.2',
+        messages: [{ role: 'user', content: 'Hello' }]
+      };
+      if (useMaxCompletionTokens) {
+        body.max_completion_tokens = 10;
+      } else {
+        body.max_tokens = 10;
+      }
 
-    if (response.ok) {
-      showStatus('✅ 连接测试成功！', 'success');
-    } else {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiToken}`,
+          'X-Mtcc-Client': 'shenzhou-assistant-extension'
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (response.ok) {
+        return true;
+      }
+
+      const responseText = await response.text();
+      if (allowRetry && response.status === 400) {
+        const lower = responseText.toLowerCase();
+        const mentionsBoth = lower.includes('max_tokens') && lower.includes('max_completion_tokens');
+        if (mentionsBoth) {
+          return attemptTest(!useMaxCompletionTokens, false);
+        }
+      }
+
+      throw new Error(`HTTP ${response.status}: ${responseText || response.statusText}`);
+    };
+
+    const preferMaxCompletionTokens = /gpt-5/i.test(model || '');
+    await attemptTest(preferMaxCompletionTokens, true);
+    showStatus('✅ 连接测试成功！', 'success');
   } catch (error) {
     showStatus('❌ 连接测试失败: ' + error.message, 'error');
   } finally {
@@ -145,11 +170,48 @@ function normalizeApiUrl(apiUrl) {
   }
 
   const trimmed = apiUrl.replace(/\/+$/u, '');
+  if (trimmed.endsWith('/chat/completions')) {
+    return trimmed;
+  }
   if (trimmed.endsWith('/v1')) {
     return `${trimmed}/chat/completions`;
   }
 
   return trimmed;
+}
+
+async function fetchLatestExtensionVersion() {
+  try {
+    const response = await fetch(GITHUB_MANIFEST_URL, { cache: 'no-store' });
+    if (!response.ok) {
+      return 'latest';
+    }
+    const data = await response.json();
+    return data?.version || 'latest';
+  } catch (error) {
+    return 'latest';
+  }
+}
+
+async function downloadLatestExtension() {
+  if (!chrome.downloads?.download) {
+    showStatus('❌ 当前扩展未开启 downloads 权限，无法自动下载。', 'error');
+    return;
+  }
+  const version = await fetchLatestExtensionVersion();
+  const filename = `chrome-extension_${version}.zip`;
+  chrome.downloads.download({
+    url: GITHUB_REPO_ZIP_URL,
+    filename,
+    saveAs: true,
+    conflictAction: 'uniquify'
+  }, () => {
+    if (chrome.runtime.lastError) {
+      showStatus(`❌ 下载失败: ${chrome.runtime.lastError.message}`, 'error');
+    } else {
+      showStatus('✅ 已开始下载，请等待完成。', 'success');
+    }
+  });
 }
 
 /**
@@ -192,4 +254,8 @@ loadConfig();
 // 事件监听
 elements.saveBtn.addEventListener('click', saveConfig);
 elements.testBtn.addEventListener('click', testConnection);
+const downloadExtensionBtn = document.getElementById('downloadExtensionBtn');
+if (downloadExtensionBtn) {
+  downloadExtensionBtn.addEventListener('click', downloadLatestExtension);
+}
 elements.resetBtn.addEventListener('click', resetConfig);
