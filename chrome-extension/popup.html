@@ -16,12 +16,26 @@
       height: 100%;
     }
 
+    :root {
+      --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      --text-color: #e4e4e4;
+      --subtitle-color: #888;
+      --panel-bg: rgba(0, 0, 0, 0.1);
+      --panel-strong-bg: rgba(0, 0, 0, 0.3);
+      --panel-border: rgba(255, 255, 255, 0.1);
+      --accent: #00d9ff;
+      --accent-soft: rgba(0, 217, 255, 0.1);
+      --accent-border: rgba(0, 217, 255, 0.3);
+      --success: #00ff88;
+      --error: #ff6b6b;
+    }
+
     body {
       width: 100%;
       height: 100vh;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      color: #e4e4e4;
+      background: var(--bg-gradient);
+      color: var(--text-color);
       padding: 15px;
       display: flex;
       flex-direction: column;
@@ -44,13 +58,13 @@
     
     .subtitle {
       font-size: 0.8rem;
-      color: #888;
+      color: var(--subtitle-color);
       margin-top: 5px;
     }
     
     .status-bar {
-      background: rgba(0, 217, 255, 0.1);
-      border: 1px solid rgba(0, 217, 255, 0.3);
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
       border-radius: 8px;
       padding: 10px;
       margin-bottom: 15px;
@@ -58,9 +72,9 @@
       flex-shrink: 0;
     }
     
-    .status-bar.ready { border-color: #00ff88; background: rgba(0, 255, 136, 0.1); }
+    .status-bar.ready { border-color: var(--success); background: rgba(0, 255, 136, 0.1); }
     .status-bar.working { border-color: #ffaa00; background: rgba(255, 170, 0, 0.1); }
-    .status-bar.error { border-color: #ff6b6b; background: rgba(255, 107, 107, 0.1); }
+    .status-bar.error { border-color: var(--error); background: rgba(255, 107, 107, 0.1); }
     
     .input-section {
       margin-bottom: 15px;
@@ -69,7 +83,7 @@
     label {
       display: block;
       font-size: 0.85rem;
-      color: #888;
+      color: var(--subtitle-color);
       margin-bottom: 5px;
     }
     
@@ -79,14 +93,14 @@
       border: none;
       border-radius: 8px;
       background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      color: var(--text-color);
       font-size: 14px;
       resize: none;
       min-height: 80px;
     }
     
     textarea:focus {
-      outline: 2px solid #00d9ff;
+      outline: 2px solid var(--accent);
     }
     
     input[type="text"], input[type="password"] {
@@ -95,12 +109,12 @@
       border: none;
       border-radius: 6px;
       background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      color: var(--text-color);
       font-size: 13px;
     }
     
     input:focus {
-      outline: 1px solid #00d9ff;
+      outline: 1px solid var(--accent);
     }
     
     .btn-group {
@@ -121,13 +135,13 @@
     }
     
     .btn-primary {
-      background: linear-gradient(135deg, #00d9ff, #00ff88);
+      background: linear-gradient(135deg, var(--accent), var(--success));
       color: #000;
     }
     
     .btn-secondary {
       background: rgba(255, 255, 255, 0.1);
-      color: #fff;
+      color: var(--text-color);
       border: 1px solid rgba(255, 255, 255, 0.2);
     }
     
@@ -142,7 +156,7 @@
     }
     
     .output-section {
-      background: rgba(0, 0, 0, 0.3);
+      background: var(--panel-strong-bg);
       border-radius: 8px;
       padding: 12px;
       min-height: 0;
@@ -161,7 +175,7 @@
       display: flex !important;
       flex-direction: column;
       width: 100%;
-      background: rgba(0, 0, 0, 0.1);
+      background: var(--panel-bg);
       border-radius: 8px;
       overflow: hidden;
       min-height: 0;
@@ -172,9 +186,9 @@
       align-items: center;
       justify-content: space-between;
       padding: 10px;
-      background: rgba(0, 217, 255, 0.1);
+      background: var(--accent-soft);
       border-radius: 8px 8px 0 0;
-      border-bottom: 1px solid rgba(0, 217, 255, 0.3);
+      border-bottom: 1px solid var(--accent-border);
       flex-shrink: 0;
       gap: 10px;
     }
@@ -182,7 +196,7 @@
     .chat-title {
       font-size: 0.9rem;
       font-weight: bold;
-      color: #00d9ff;
+      color: var(--accent);
       white-space: nowrap;
     }
 
@@ -199,7 +213,7 @@
       background: rgba(255, 255, 255, 0.06);
       border: 1px solid rgba(255, 255, 255, 0.15);
       border-radius: 999px;
-      color: #e4e4e4;
+      color: var(--text-color);
       font-size: 12px;
       cursor: pointer;
       outline: none;
@@ -218,7 +232,7 @@
       background: rgba(255, 255, 255, 0.06);
       border: 1px solid rgba(255, 255, 255, 0.15);
       border-radius: 999px;
-      color: #e4e4e4;
+      color: var(--text-color);
       font-size: 12px;
       user-select: none;
       cursor: pointer;
@@ -349,7 +363,7 @@
       font-size: 12px;
       font-weight: 600;
       background: rgba(255, 255, 255, 0.06);
-      color: #e4e4e4;
+      color: var(--text-color);
       border: 1px solid rgba(255, 255, 255, 0.15);
       cursor: pointer;
     }
@@ -394,21 +408,21 @@
     }
     
     .user-message .message-bubble {
-      background: linear-gradient(135deg, #00d9ff, #00ff88);
+      background: linear-gradient(135deg, var(--accent), var(--success));
       color: #000;
       border-bottom-right-radius: 4px;
     }
     
     .bot-message .message-bubble {
       background: rgba(255, 255, 255, 0.1);
-      color: #e4e4e4;
+      color: var(--text-color);
       border-bottom-left-radius: 4px;
       border: 1px solid rgba(255, 255, 255, 0.1);
     }
     
     .message-time {
       font-size: 10px;
-      color: #888;
+      color: var(--subtitle-color);
       margin-top: 5px;
       padding: 0 5px;
     }
@@ -494,8 +508,8 @@
       display: flex;
       gap: 10px;
       padding: 10px;
-      background: rgba(0, 0, 0, 0.3);
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      background: var(--panel-strong-bg);
+      border-top: 1px solid var(--panel-border);
       border-radius: 0 0 8px 8px;
       flex-shrink: 0;
       position: relative;
@@ -565,7 +579,7 @@
       align-items: center;
       justify-content: center;
       background: rgba(255, 255, 255, 0.08);
-      color: #e4e4e4;
+      color: var(--text-color);
       border: 1px solid rgba(255, 255, 255, 0.12);
       cursor: pointer;
       font-size: 16px;
@@ -631,17 +645,17 @@
     .chat-status {
       padding: 5px 10px;
       font-size: 11px;
-      color: #888;
+      color: var(--subtitle-color);
       text-align: center;
       background: rgba(0, 0, 0, 0.2);
     }
     
     .chat-status.thinking {
-      color: #00d9ff;
+      color: var(--accent);
     }
     
     .chat-status.error {
-      color: #ff6b6b;
+      color: var(--error);
     }
     
     .chat-messages::-webkit-scrollbar {
@@ -675,15 +689,15 @@
       background: transparent;
       border: none;
       border-bottom: 2px solid transparent;
-      color: #888;
+      color: var(--subtitle-color);
       cursor: pointer;
       font-size: 13px;
       transition: all 0.2s;
     }
     
     .tab.active {
-      color: #00d9ff;
-      border-bottom-color: #00d9ff;
+      color: var(--accent);
+      border-bottom-color: var(--accent);
     }
     
     .tab-content {
@@ -742,7 +756,7 @@
     
     .quick-btn:hover {
       background: rgba(0, 217, 255, 0.2);
-      border-color: #00d9ff;
+      border-color: var(--accent);
       color: #fff;
     }
     
@@ -869,6 +883,71 @@
       margin-top: 10px;
       display: grid;
       gap: 10px;
+    }
+
+    body.theme-light {
+      --bg-gradient: linear-gradient(180deg, #f6f7fb 0%, #eef1f6 100%);
+      --text-color: #1f2a37;
+      --subtitle-color: #6b7280;
+      --panel-bg: rgba(255, 255, 255, 0.8);
+      --panel-strong-bg: rgba(255, 255, 255, 0.9);
+      --panel-border: rgba(31, 41, 55, 0.12);
+      --accent: #4f8cff;
+      --accent-soft: rgba(79, 140, 255, 0.12);
+      --accent-border: rgba(79, 140, 255, 0.35);
+      --success: #22c55e;
+      --error: #ef4444;
+    }
+
+    body.theme-light .chat-messages {
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    body.theme-light .message-bubble {
+      background: rgba(255, 255, 255, 0.95);
+      color: #1f2a37;
+    }
+
+    body.theme-light .bot-message .message-bubble {
+      border: 1px solid rgba(31, 41, 55, 0.1);
+    }
+
+    body.theme-light .chat-input-container textarea,
+    body.theme-light input[type="text"],
+    body.theme-light input[type="password"],
+    body.theme-light textarea {
+      background: rgba(255, 255, 255, 0.9);
+      color: #1f2a37;
+    }
+
+    body.theme-light .btn-secondary,
+    body.theme-light .mini-btn,
+    body.theme-light .icon-btn,
+    body.theme-light .chip-select,
+    body.theme-light .chip-toggle,
+    body.theme-light .quick-btn,
+    body.theme-light .chat-session-item,
+    body.theme-light .skill-item,
+    body.theme-light .attachment-chip,
+    body.theme-light .code-block {
+      background: rgba(255, 255, 255, 0.85);
+      color: #1f2a37;
+      border-color: rgba(31, 41, 55, 0.12);
+    }
+
+    body.theme-light .chat-session-item.active {
+      background: rgba(79, 140, 255, 0.15);
+      border-color: rgba(79, 140, 255, 0.35);
+    }
+
+    body.theme-light .skill-suggest {
+      background: rgba(255, 255, 255, 0.98);
+      border-color: rgba(31, 41, 55, 0.12);
+    }
+
+    body.theme-light .message-attachment-file {
+      background: rgba(255, 255, 255, 0.9);
+      color: #1f2a37;
     }
 
     .skills-section {
@@ -1087,6 +1166,13 @@
           <input type="checkbox" id="verboseLogs" />
           显示详细日志（默认精简）
         </label>
+      </div>
+      <div>
+        <label>主题</label>
+        <select id="themeSelect" class="chip-select">
+          <option value="dark">深色（默认）</option>
+          <option value="light">浅色（Gemini 风格）</option>
+        </select>
       </div>
       <div>
         <label>API URL</label>

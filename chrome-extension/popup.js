@@ -224,6 +224,7 @@ ORDER BY
 let statusBar, taskInput, executeBtn, sendBtn, outputArea;
 let apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId;
 let verboseLogsToggle;
+let themeSelect;
 let resultSection, resultIcon, resultTitle, resultContent;
 // 聊天相关元素
 let chatMessages, chatInput, chatSendBtn, chatStatus;
@@ -408,6 +409,16 @@ function renderChatSessionList() {
     });
     chatSessionList.appendChild(item);
   });
+}
+
+function applyTheme(theme) {
+  const body = document.body;
+  if (!body) return;
+  if (theme === 'light') {
+    body.classList.add('theme-light');
+  } else {
+    body.classList.remove('theme-light');
+  }
 }
 
 function loadChatSessions() {
@@ -856,6 +867,7 @@ document.addEventListener('DOMContentLoaded', () => {
   model = document.getElementById('model');
   webhookUrl = document.getElementById('webhookUrl');
   verboseLogsToggle = document.getElementById('verboseLogs');
+  themeSelect = document.getElementById('themeSelect');
   
   // 结果展示区元素
   resultSection = document.getElementById('resultSection');
@@ -895,7 +907,7 @@ document.addEventListener('DOMContentLoaded', () => {
   skillsList = document.getElementById('skillsList');
   
   // 加载保存的配置
-  const configKeys = ['apiUrl', 'apiToken', 'model', 'webhookUrl', 'confluenceToken', 'weeklyReportRootPageId', 'verboseLogs', 'chatShowPlan'];
+  const configKeys = ['apiUrl', 'apiToken', 'model', 'webhookUrl', 'confluenceToken', 'weeklyReportRootPageId', 'verboseLogs', 'chatShowPlan', 'theme'];
   chrome.storage.local.get(configKeys.flatMap(key => [key, storageKey(key)]), (result) => {
     const apiUrlValue = readStoredValue(result, 'apiUrl');
     const apiTokenValue = readStoredValue(result, 'apiToken');
@@ -905,6 +917,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const weeklyRootValue = readStoredValue(result, 'weeklyReportRootPageId');
     const verboseLogsValue = readStoredValue(result, 'verboseLogs');
     const chatShowPlanValue = readStoredValue(result, 'chatShowPlan');
+    const themeValue = readStoredValue(result, 'theme');
 
     if (apiUrl) apiUrl.value = apiUrlValue || DEFAULT_API_URL;
     if (apiTokenValue) apiToken.value = apiTokenValue;
@@ -919,6 +932,10 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         chatShowPlanToggle.checked = true;
       }
+    }
+    if (themeSelect) {
+      themeSelect.value = themeValue || 'dark';
+      applyTheme(themeSelect.value || 'dark');
     }
   });
 
@@ -944,7 +961,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (skillCancelBtn) skillCancelBtn.addEventListener('click', resetSkillForm);
   
   // 保存配置
-  [apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId, verboseLogsToggle, chatShowPlanToggle].forEach(el => {
+  [apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId, verboseLogsToggle, chatShowPlanToggle, themeSelect].forEach(el => {
     if (el) el.addEventListener('change', saveConfig);
   });
   
@@ -1970,7 +1987,8 @@ function saveConfig() {
     confluenceToken: confluenceToken.value,
     weeklyReportRootPageId: weeklyReportRootPageId?.value || '',
     verboseLogs: !!verboseLogsToggle?.checked,
-    chatShowPlan: !!chatShowPlanToggle?.checked
+    chatShowPlan: !!chatShowPlanToggle?.checked,
+    theme: themeSelect?.value || 'dark'
   };
 
   const payload = {};
