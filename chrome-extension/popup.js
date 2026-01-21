@@ -934,8 +934,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     if (themeSelect) {
-      themeSelect.value = themeValue || 'dark';
-      applyTheme(themeSelect.value || 'dark');
+      themeSelect.value = themeValue || 'light';
+      applyTheme(themeSelect.value || 'light');
     }
   });
 
@@ -1988,7 +1988,7 @@ function saveConfig() {
     weeklyReportRootPageId: weeklyReportRootPageId?.value || '',
     verboseLogs: !!verboseLogsToggle?.checked,
     chatShowPlan: !!chatShowPlanToggle?.checked,
-    theme: themeSelect?.value || 'dark'
+    theme: themeSelect?.value || 'light'
   };
 
   const payload = {};
