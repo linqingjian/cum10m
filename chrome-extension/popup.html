@@ -397,6 +397,7 @@
       border-top: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 0 0 8px 8px;
       flex-shrink: 0;
+      position: relative;
     }
 
     .attachment-bar {
@@ -478,6 +479,46 @@
     .icon-btn.danger:hover {
       background: rgba(255, 107, 107, 0.15);
       border-color: rgba(255, 107, 107, 0.45);
+    }
+
+    .skill-suggest {
+      position: absolute;
+      left: 10px;
+      right: 120px;
+      bottom: 70px;
+      background: rgba(12, 18, 30, 0.98);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+      max-height: 200px;
+      overflow-y: auto;
+      display: none;
+      z-index: 5;
+    }
+
+    .skill-suggest-item {
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .skill-suggest-item strong {
+      color: #8ed7ff;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .skill-suggest-item span {
+      color: #b5b5b5;
+      font-size: 11px;
+    }
+
+    .skill-suggest-item:hover,
+    .skill-suggest-item.active {
+      background: rgba(0, 217, 255, 0.12);
     }
 
     .send-btn {
@@ -833,9 +874,11 @@
 	    <span class="quick-btn" data-task="查看当前页面的表结构">📋 看表结构</span>
 	    <span class="quick-btn" data-task="获取当前查询结果">📥 获取结果</span>
 	    <select id="model" class="model-select-inline">
-	      <option value="gemini-3-pro-preview">🤖 Gemini-3-Pro</option>
-	      <option value="gpt-4o-mini" selected>⚡ GPT-4o-mini</option>
+	      <option value="gpt-5.2-chat" selected>GPT-5.2-Chat</option>
+	      <option value="gpt-5.2">GPT-5.2</option>
+	      <option value="gpt-4o-mini">⚡ GPT-4o-mini</option>
 	      <option value="gpt-4o">GPT-4o</option>
+	      <option value="gemini-3-pro-preview">🤖 Gemini-3-Pro</option>
 	      <option value="glm-4.7">🇨🇳 GLM-4.7</option>
 	      <option value="deepseek-v3">🔧 DeepSeek-V3</option>
 	      <option value="qwen-max">🇨🇳 Qwen-Max</option>
@@ -883,6 +926,7 @@
     <div id="attachmentBar" class="attachment-bar"></div>
     <div class="chat-input-container">
       <textarea id="chatInput" placeholder="输入你的问题..."></textarea>
+      <div id="skillSuggest" class="skill-suggest"></div>
       <input id="fileInput" type="file" multiple style="display:none;" />
       <div class="chat-input-actions">
         <button id="attachBtn" class="icon-btn" title="上传文件">📎</button>

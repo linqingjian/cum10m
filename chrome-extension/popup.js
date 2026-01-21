@@ -229,6 +229,9 @@ let chatSyncPageButton;
 let pinBtn, pauseBtn, resumeBtn, cancelBtn;
 let attachBtn, screenshotBtn, fileInput, attachmentBar;
 let skillNameInput, skillDescInput, skillPromptInput, skillSaveBtn, skillCancelBtn, skillsList;
+let skillSuggest;
+let skillSuggestItems = [];
+let skillSuggestIndex = -1;
 
 let pendingAttachments = [];
 let pendingExecAfterCancel = null; // { taskWithAttachments, originalText, preferShenzhou, skillMentions }
@@ -288,6 +291,104 @@ function extractSkillMentions(text) {
   return Array.from(mentions);
 }
 
+function findSkillQuery(text, cursor) {
+  if (cursor == null) return null;
+  const beforeCursor = text.slice(0, cursor);
+  const atIndex = beforeCursor.lastIndexOf('@');
+  if (atIndex < 0) return null;
+  const afterAt = beforeCursor.slice(atIndex + 1);
+  if (afterAt.length === 0) return { start: atIndex, query: '' };
+  if (/\s/.test(afterAt)) return null;
+  return { start: atIndex, query: afterAt };
+}
+
+function getEnabledSkillsForSuggest() {
+  return (customSkills || []).filter(skill => skill && skill.enabled !== false);
+}
+
+function updateSkillSuggest() {
+  if (!skillSuggest || !chatInput) return;
+  const cursor = chatInput.selectionStart;
+  const text = chatInput.value || '';
+  const queryInfo = findSkillQuery(text, cursor);
+  if (!queryInfo) {
+    skillSuggest.style.display = 'none';
+    skillSuggestItems = [];
+    skillSuggestIndex = -1;
+    return;
+  }
+
+  const query = normalizeSkillHandle(queryInfo.query);
+  const skills = getEnabledSkillsForSuggest();
+  const matches = query
+    ? skills.filter(skill => {
+      const handle = getSkillHandle(skill);
+      const name = normalizeSkillHandle(skill.name);
+      return handle.includes(query) || name.includes(query);
+    })
+    : skills;
+
+  if (matches.length === 0) {
+    skillSuggest.style.display = 'none';
+    skillSuggestItems = [];
+    skillSuggestIndex = -1;
+    return;
+  }
+
+  skillSuggest.innerHTML = '';
+  skillSuggestItems = matches.slice(0, 8);
+  skillSuggestIndex = 0;
+  skillSuggestItems.forEach((skill, idx) => {
+    const item = document.createElement('div');
+    item.className = `skill-suggest-item${idx === 0 ? ' active' : ''}`;
+    const title = document.createElement('strong');
+    const handle = getSkillHandle(skill);
+    title.textContent = handle ? `${skill.name} (@${handle})` : skill.name;
+    const desc = document.createElement('span');
+    desc.textContent = skill.description || '（暂无描述）';
+    item.appendChild(title);
+    item.appendChild(desc);
+    item.addEventListener('click', () => applySkillSuggest(skill, queryInfo));
+    skillSuggest.appendChild(item);
+  });
+  skillSuggest.style.display = 'block';
+}
+
+function applySkillSuggest(skill, queryInfo) {
+  if (!chatInput) return;
+  const text = chatInput.value || '';
+  const handle = getSkillHandle(skill);
+  const insert = handle ? `@${handle} ` : `@${normalizeSkillHandle(skill.name)} `;
+  const before = text.slice(0, queryInfo.start);
+  const after = text.slice(chatInput.selectionStart || 0);
+  chatInput.value = `${before}${insert}${after}`;
+  const cursor = (before + insert).length;
+  chatInput.focus();
+  chatInput.setSelectionRange(cursor, cursor);
+  skillSuggest.style.display = 'none';
+  skillSuggestItems = [];
+  skillSuggestIndex = -1;
+}
+
+function moveSkillSuggest(delta) {
+  if (!skillSuggestItems.length) return;
+  const total = skillSuggestItems.length;
+  skillSuggestIndex = (skillSuggestIndex + delta + total) % total;
+  Array.from(skillSuggest.children).forEach((child, idx) => {
+    child.classList.toggle('active', idx === skillSuggestIndex);
+  });
+}
+
+function confirmSkillSuggest() {
+  if (!skillSuggestItems.length || skillSuggestIndex < 0) return false;
+  const cursor = chatInput.selectionStart;
+  const queryInfo = findSkillQuery(chatInput.value || '', cursor);
+  if (!queryInfo) return false;
+  const skill = skillSuggestItems[skillSuggestIndex];
+  applySkillSuggest(skill, queryInfo);
+  return true;
+}
+
 function getMissingSkillMentions(mentions) {
   const handles = new Set((customSkills || []).map(getSkillHandle).filter(Boolean));
   return (mentions || []).filter(m => !handles.has(normalizeSkillHandle(m)));
@@ -318,10 +419,10 @@ function resetSkillForm() {
   if (skillSaveBtn) skillSaveBtn.textContent = '保存技能';
 }
 
-function renderSkillsList() {
-  if (!skillsList) return;
-  skillsList.innerHTML = '';
-  if (!customSkills || customSkills.length === 0) {
+  function renderSkillsList() {
+    if (!skillsList) return;
+    skillsList.innerHTML = '';
+    if (!customSkills || customSkills.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'skill-item';
     empty.textContent = '暂无自定义技能，添加后可用 @技能名 调用。';
@@ -329,7 +430,7 @@ function renderSkillsList() {
     return;
   }
 
-  customSkills.forEach((skill) => {
+    customSkills.forEach((skill) => {
     const item = document.createElement('div');
     item.className = 'skill-item';
 
@@ -431,6 +532,8 @@ function upsertSkillFromForm() {
       handle: getSkillHandle({ name }),
       enabled: true
     });
+
+    updateSkillSuggest();
   }
 
   saveCustomSkills();
@@ -589,6 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
   screenshotBtn = document.getElementById('screenshotBtn');
   fileInput = document.getElementById('fileInput');
   attachmentBar = document.getElementById('attachmentBar');
+  skillSuggest = document.getElementById('skillSuggest');
   skillNameInput = document.getElementById('skillNameInput');
   skillDescInput = document.getElementById('skillDescInput');
   skillPromptInput = document.getElementById('skillPromptInput');
@@ -1297,6 +1401,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const skillMentions = extractSkillMentions(question);
     const missingSkills = getMissingSkillMentions(skillMentions);
+    const enabledSkillHandles = (customSkills || []).filter(s => s && s.enabled !== false).map(getSkillHandle);
+    const appliedSkills = skillMentions.filter(m => enabledSkillHandles.includes(normalizeSkillHandle(m)));
+    if (appliedSkills.length > 0) {
+      addChatMessage(`✅ 已启用技能：${appliedSkills.map(m => `@${m}`).join('，')}`, false);
+    }
     if (missingSkills.length > 0) {
       addChatMessage(`⚠️ 未找到技能：${missingSkills.map(m => `@${m}`).join('，')}（请先在 Skills 管理中添加）`, false);
     }
@@ -1529,10 +1638,38 @@ document.addEventListener('DOMContentLoaded', () => {
   // 聊天输入框回车发送
   if (chatInput) {
     chatInput.addEventListener('keydown', (e) => {
+      if (skillSuggest && skillSuggest.style.display === 'block') {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          moveSkillSuggest(1);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          moveSkillSuggest(-1);
+          return;
+        }
+        if (e.key === 'Enter' && !e.shiftKey) {
+          if (confirmSkillSuggest()) {
+            e.preventDefault();
+            return;
+          }
+        }
+        if (e.key === 'Escape') {
+          skillSuggest.style.display = 'none';
+          skillSuggestItems = [];
+          skillSuggestIndex = -1;
+          return;
+        }
+      }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendChatMessage();
       }
+    });
+
+    chatInput.addEventListener('input', () => {
+      updateSkillSuggest();
     });
 
     chatInput.addEventListener('paste', async (e) => {
@@ -1570,8 +1707,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       renderAttachments();
+      updateSkillSuggest();
     });
   }
+
+  document.addEventListener('click', (e) => {
+    if (!skillSuggest || skillSuggest.style.display !== 'block') return;
+    if (e.target === skillSuggest || skillSuggest.contains(e.target)) return;
+    if (e.target === chatInput) return;
+    skillSuggest.style.display = 'none';
+    skillSuggestItems = [];
+    skillSuggestIndex = -1;
+  });
   
   // 执行按钮
   executeBtn.addEventListener('click', executeTask);

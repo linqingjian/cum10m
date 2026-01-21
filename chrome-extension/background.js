@@ -122,12 +122,15 @@ function buildCustomSkillsBlock(customSkills, mentions = [], options = {}) {
     const handle = getSkillHandle(skill);
     const label = handle ? `${skill.name}（@${handle}）` : skill.name;
     const desc = String(skill.description || '').trim().slice(0, 200);
-    const prompt = String(skill.prompt || '').trim().slice(0, 240);
+    const prompt = String(skill.prompt || '').trim().slice(0, 400);
     const detail = prompt ? `\n  说明: ${prompt}` : '';
     return `- ${label}: ${desc || '（暂无描述）'}${detail}`;
   });
   const header = normalizedMentions.length > 0 ? '【用户指定技能】' : '【用户自定义技能】';
-  return `${header}\n${lines.join('\n')}`;
+  const enforce = normalizedMentions.length > 0
+    ? '【执行规则】当用户 @技能 时，必须严格遵循对应技能说明与步骤，不要随意省略关键步骤。'
+    : '';
+  return `${header}\n${lines.join('\n')}\n${enforce}`.trim();
 }
 
 function withTimeout(promise, ms) {
@@ -600,7 +603,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   chrome.storage.local.get(['model', storageKey('model')], (result) => {
     const existingModel = readStoredValue(result, 'model');
     if (!existingModel) {
-      chrome.storage.local.set({ [storageKey('model')]: 'gpt-4o-mini' });
+      chrome.storage.local.set({ [storageKey('model')]: 'gpt-5.2-chat' });
     }
   });
 
