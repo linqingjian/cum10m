@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-01-21",
+  "skills": [
+    {
+      "id": "sql_template",
+      "name": "SQL模板",
+      "description": "生成标准的数仓SQL查询模板，包含分区条件和常用聚合",
+      "prompt": "生成SQL时必须包含: 1) date_p分区条件 2) type_p>=0000过滤 3) 使用标准命名规范",
+      "enabled": true
+    },
+    {
+      "id": "cost_analysis",
+      "name": "成本分析",
+      "description": "分析AIGC调用成本，按模型、业务线、时间维度统计",
+      "prompt": "查询stat_aigc.mpub_odz_aigc_outer_cost表，输出cost总和、调用次数、平均成本，按需分组",
+      "enabled": true
+    },
+    {
+      "id": "table_doc",
+      "name": "表文档",
+      "description": "生成数仓表的字段说明文档",
+      "prompt": "输出表结构时包含: 字段名、类型、注释、是否分区字段、示例值",
+      "enabled": true
+    },
+    {
+      "id": "weekly_report",
+      "name": "周报数据",
+      "description": "生成周报所需的数据统计SQL",
+      "prompt": "按周汇总关键指标，输出: 本周值、上周值、环比变化率，格式化为Markdown表格",
+      "enabled": true
+    },
+    {
+      "id": "data_quality",
+      "name": "数据质量",
+      "description": "检查数据质量问题，如空值、重复、异常值",
+      "prompt": "生成数据质量检查SQL，包含: NULL检查、重复检查、范围检查、一致性检查",
+      "enabled": true
+    }
+  ]
+}
