@@ -63,8 +63,13 @@
   - 任务输入框
   - 执行按钮
   - 模型选择
+  - API URL/Token 配置（侧边栏内联）
   - 日志显示
   - 结果展示
+  - 附件上传/粘贴图片
+  - Skills 管理 + @skill 调用
+  - 流式对话输出（边生成边展示）
+  - 页面元素自动同步/手动刷新
 
 #### 2. background.js（后台服务）
 - **位置**：`chrome-extension/background.js`
@@ -72,8 +77,12 @@
 - **功能**：
   - 接收 popup 的任务请求
   - 调用 AI API 获取操作指令
+  - 支持 Chat 流式输出（SSE）
+  - 自动截图回合（模型请求时触发）
   - 执行浏览器操作（导航、点击、输入等）
+  - SQL 编辑器读取（CodeMirror/Ace/textarea）
   - 管理任务状态和日志
+  - 删除表/任务/节点拦截（防止误删）
   - 发送结果到 popup
 
 #### 3. content.js（内容脚本）
@@ -104,6 +113,13 @@
   - 显示对话历史
   - 状态更新显示
 
+#### 6. options.html/js（独立配置页）
+- **位置**：`chrome-extension/options.html`, `options.js`
+- **作用**：首次安装后的配置入口
+- **功能**：
+  - API URL/Token 配置
+  - 连接测试
+
 ---
 
 ## 🎯 核心技能
@@ -120,7 +136,7 @@
   - `click`：点击元素（支持选择器或文本匹配）
   - `type`：输入文本（支持 CodeMirror、Ace、普通输入框）
   - `wait`：等待指定时间
-  - `get_result`：获取页面结果
+  - `get_result`：获取页面结果（无表格时尝试读取 SQL 编辑器内容）
   - `finish`：完成任务
 
 ### 3. SQL 查询执行
@@ -140,6 +156,7 @@
   - 普通 HTML 表格
   - 文本结果
   - 错误信息
+  - SQL 编辑器内容（CodeMirror/Ace/textarea）
 
 ### 5. 消息推送
 - **能力**：发送结果到企业微信群
@@ -152,11 +169,15 @@
 
 ### 功能特点
 
-1. **浮动窗口**：固定在页面右下角，可拖拽
+1. **侧边栏/浮动窗口**：侧边栏为主入口；神舟页面可注入浮动窗口
 2. **实时对话**：输入问题立即获得回复
-3. **状态显示**：显示执行状态（思考中、执行中、完成、错误）
-4. **消息历史**：显示对话历史记录
-5. **最小化/关闭**：可以最小化或关闭窗口
+3. **流式输出**：回复内容边生成边显示（避免久等）
+4. **状态显示**：显示执行状态（思考中、执行中、完成、错误）
+5. **消息历史**：显示对话历史记录
+6. **附件能力**：支持文件/图片粘贴
+7. **自动截图**：模型需要视觉时自动截图并继续回答
+8. **同步页面**：自动/手动抓取页面可交互元素
+9. **最小化/关闭**：可以最小化或关闭窗口
 
 ### 实现方式
 
@@ -232,11 +253,21 @@ chrome.runtime.sendMessage({
   model: model
 });
 
+// chat 流式：popup.js → background.js
+chrome.runtime.sendMessage({
+  type: 'CHAT_MESSAGE_STREAM',
+  message: question
+});
+
 // background.js → popup.js
 chrome.runtime.sendMessage({
   type: 'LOG_UPDATE',
   log: log
 });
+
+// chat 流式：background.js → popup.js
+chrome.runtime.sendMessage({ type: 'CHAT_STREAM', chunk: '...' });
+chrome.runtime.sendMessage({ type: 'CHAT_STREAM_DONE', reply: '...' });
 ```
 
 #### 2. background ↔ content
@@ -391,11 +422,12 @@ console.log(result);
 
 ### 1) 纯对话链路（Chat 模式）
 1. `popup.js` 收集输入、附件、@skill、页面同步开关
-2. 发送 `CHAT_MESSAGE` → `background.js:handleChatMessage`
+2. 发送 `CHAT_MESSAGE_STREAM` → `background.js:handleChatMessage`
 3. background 组装提示词（对话上下文 + 页面信息 + 技能）
 4. 如需 Confluence，会先检索再合成答案
-5. **自动截图**：模型返回 `[[NEED_SCREENSHOT]]` 时，background 自动截图并二次调用模型
-6. 回复回传至 popup 并渲染（支持代码块 + 一键复制）
+5. **流式输出**：background 发 `CHAT_STREAM` chunk，popup 边渲染
+6. **自动截图**：模型返回 `[[NEED_SCREENSHOT]]` 时自动截图并二次调用模型
+7. 回复完成 → `CHAT_STREAM_DONE`，popup 统一整理思路/代码块
 
 ### 2) 执行链路（Exec 模式）
 1. `popup.js` 发送 `START_TASK`（含上下文与 @skill）
