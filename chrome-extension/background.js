@@ -2684,9 +2684,11 @@ async function callAI(messages, model = 'gpt-5.2', timeout = 60000, options = {}
     if (!response.ok) {
       const errorText = await response.text();
       let errorCode = '';
+      let errorParam = '';
       try {
         const parsed = JSON.parse(errorText);
         errorCode = parsed?.error?.code || parsed?.code || '';
+        errorParam = parsed?.error?.param || '';
       } catch (e) {
         // ignore
       }
@@ -2700,9 +2702,11 @@ async function callAI(messages, model = 'gpt-5.2', timeout = 60000, options = {}
                                   errorText.includes('unsupported') ||
                                   errorText.includes('Only the default') ||
                                   errorText.includes('invalid_request_error'));
-      const isMaxTokensUnsupported = errorText.includes('max_tokens') &&
-                                     (errorText.includes('Unsupported parameter') ||
-                                      errorText.includes('not supported'));
+      const isMaxTokensUnsupported = errorParam === 'max_tokens' ||
+                                     (errorText.includes('max_tokens') &&
+                                      (errorText.includes('Unsupported parameter') ||
+                                       errorText.includes('not supported') ||
+                                       errorCode === 'unsupported_parameter'));
       
       console.log(`🔍 错误检测: isTemperatureError=${isTemperatureError}, isMaxTokensUnsupported=${isMaxTokensUnsupported}, temperature=${temperature}, originalTemperature=${originalTemperature}`);
       
@@ -3150,9 +3154,11 @@ async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, option
     if (!response.ok) {
       const errorText = await response.text();
       let errorCode = '';
+      let errorParam = '';
       try {
         const parsed = JSON.parse(errorText);
         errorCode = parsed?.error?.code || parsed?.code || '';
+        errorParam = parsed?.error?.param || '';
       } catch (e) {
         // ignore
       }
@@ -3163,8 +3169,11 @@ async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, option
          errorText.includes('unsupported') ||
          errorText.includes('Only the default') ||
          errorText.includes('invalid_request_error'));
-      const isMaxTokensUnsupported = errorText.includes('max_tokens') &&
-        (errorText.includes('Unsupported parameter') || errorText.includes('not supported'));
+      const isMaxTokensUnsupported = errorParam === 'max_tokens' ||
+        (errorText.includes('max_tokens') &&
+         (errorText.includes('Unsupported parameter') ||
+          errorText.includes('not supported') ||
+          errorCode === 'unsupported_parameter'));
       if (isUnknownModel && fallbackModel && !options._fallbackTried) {
         addLog(`⚠️ 模型 ${model} 不可用，自动切换到 ${fallbackModel}`, 'warn');
         chrome.storage.local.set({ [storageKey('model')]: fallbackModel });
@@ -5270,7 +5279,19 @@ async function executeAction(action) {
           throw new Error(`Confluence API 调用失败: ${response.status} - ${errorText.substring(0, 100)}`);
         }
         
-        const data = await response.json();
+        const contentType = response.headers.get('content-type') || '';
+        const rawText = await response.text();
+        if (!contentType.includes('application/json')) {
+          addLog('⚠️ Confluence 返回非 JSON，可能需要登录或无权限', 'warn');
+          return { success: false, error: 'Confluence 返回非 JSON，可能需要登录或无权限' };
+        }
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {
+          addLog('⚠️ Confluence JSON 解析失败', 'warn');
+          return { success: false, error: 'Confluence JSON 解析失败' };
+        }
         const results = data.results || [];
         
         addLog(`✅ 搜索到 ${results.length} 个页面`, 'success');
@@ -5332,7 +5353,19 @@ async function executeAction(action) {
           throw new Error(`Confluence API 调用失败: ${response.status} - ${errorText.substring(0, 100)}`);
         }
         
-        const data = await response.json();
+        const contentType = response.headers.get('content-type') || '';
+        const rawText = await response.text();
+        if (!contentType.includes('application/json')) {
+          addLog('⚠️ Confluence 返回非 JSON，可能需要登录或无权限', 'warn');
+          return { success: false, error: 'Confluence 返回非 JSON，可能需要登录或无权限' };
+        }
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {
+          addLog('⚠️ Confluence JSON 解析失败', 'warn');
+          return { success: false, error: 'Confluence JSON 解析失败' };
+        }
         
         addLog(`✅ 获取到页面: ${data.title}`, 'success');
         

@@ -103,6 +103,12 @@ function renderMessageContent(container, text) {
   container.appendChild(fragment);
 }
 
+function updateChatStatus(text, type = '') {
+  if (!chatStatus) return;
+  chatStatus.textContent = text;
+  chatStatus.className = `chat-status ${type}`;
+}
+
 async function fetchLatestExtensionVersion() {
   const fallbackVersion = chrome.runtime.getManifest()?.version || 'latest';
   try {
@@ -1305,11 +1311,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       bubble.appendChild(details);
     }
-  }
-
-  function updateChatStatus(text, type = '') {
-    chatStatus.textContent = text;
-    chatStatus.className = `chat-status ${type}`;
   }
 
   function clearPendingExecCheck() {
