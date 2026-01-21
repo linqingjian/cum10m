@@ -5,6 +5,7 @@
   "description": "AI 驱动的数仓助手，自动操作神舟平台",
   "permissions": [
     "activeTab",
+    "downloads",
     "scripting",
     "storage",
     "tabs",

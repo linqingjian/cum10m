@@ -8,6 +8,8 @@ const readStoredValue = (result, key) => {
 };
 const CUSTOM_SKILLS_STORAGE_KEY = storageKey('customSkills');
 const DEFAULT_API_URL = 'https://model-router.meitu.com/v1';
+const GITHUB_REPO_ZIP_URL = 'https://codeload.github.com/linqingjian/cum10m/zip/refs/heads/main';
+const GITHUB_MANIFEST_URL = 'https://raw.githubusercontent.com/linqingjian/cum10m/main/chrome-extension/manifest.json';
 const CHAT_SESSIONS_STORAGE_KEY = storageKey('chatSessions');
 const ACTIVE_SESSION_STORAGE_KEY = storageKey('activeSessionId');
 const DEFAULT_SESSION_TITLE = '新对话';
@@ -99,6 +101,39 @@ function renderMessageContent(container, text) {
   }
 
   container.appendChild(fragment);
+}
+
+async function fetchLatestExtensionVersion() {
+  const fallbackVersion = chrome.runtime.getManifest()?.version || 'latest';
+  try {
+    const response = await fetch(GITHUB_MANIFEST_URL, { cache: 'no-store' });
+    if (!response.ok) {
+      return fallbackVersion;
+    }
+    const data = await response.json();
+    return data?.version || fallbackVersion;
+  } catch (error) {
+    return fallbackVersion;
+  }
+}
+
+async function downloadLatestExtension() {
+  if (!chrome.downloads?.download) {
+    alert('当前扩展未开启 downloads 权限，无法自动下载。请联系管理员更新扩展。');
+    return;
+  }
+  const version = await fetchLatestExtensionVersion();
+  const filename = `chrome-extension_${version}.zip`;
+  chrome.downloads.download({
+    url: GITHUB_REPO_ZIP_URL,
+    filename,
+    saveAs: true,
+    conflictAction: 'uniquify'
+  }, () => {
+    if (chrome.runtime.lastError) {
+      alert(`下载失败: ${chrome.runtime.lastError.message}`);
+    }
+  });
 }
 
 // 系统提示词 - 整合完整 Skills
@@ -311,6 +346,7 @@ ORDER BY
 // DOM 元素
 let statusBar, taskInput, executeBtn, sendBtn, outputArea;
 let apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId;
+let downloadExtensionBtn;
 let verboseLogsToggle;
 let themeSelect;
 let resultSection, resultIcon, resultTitle, resultContent;
@@ -996,6 +1032,7 @@ document.addEventListener('DOMContentLoaded', () => {
   skillSaveBtn = document.getElementById('skillSaveBtn');
   skillCancelBtn = document.getElementById('skillCancelBtn');
   skillsList = document.getElementById('skillsList');
+  downloadExtensionBtn = document.getElementById('downloadExtensionBtn');
   
   // 加载保存的配置
   const configKeys = ['apiUrl', 'apiToken', 'model', 'webhookUrl', 'confluenceToken', 'weeklyReportRootPageId', 'verboseLogs', 'chatShowPlan', 'theme'];
@@ -1050,6 +1087,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (skillSaveBtn) skillSaveBtn.addEventListener('click', upsertSkillFromForm);
   if (skillCancelBtn) skillCancelBtn.addEventListener('click', resetSkillForm);
+  if (downloadExtensionBtn) downloadExtensionBtn.addEventListener('click', downloadLatestExtension);
   
   // 保存配置
   [apiUrl, apiToken, model, webhookUrl, confluenceToken, weeklyReportRootPageId, verboseLogsToggle, chatShowPlanToggle, themeSelect].forEach(el => {

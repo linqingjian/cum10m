@@ -144,6 +144,17 @@
       color: var(--text-color);
       border: 1px solid rgba(255, 255, 255, 0.2);
     }
+
+    a.btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
     
     button:hover {
       transform: translateY(-1px);
@@ -1291,6 +1302,17 @@
       <div>
         <label>Webhook URL</label>
         <input type="text" id="webhookUrl" value="">
+      </div>
+      <div>
+        <label>功能文档</label>
+        <a class="btn-secondary" href="https://cf.meitu.com/confluence/pages/viewpage.action?pageId=662858433" target="_blank" rel="noopener noreferrer">打开 Confluence 文档</a>
+      </div>
+      <div>
+        <label>团队更新</label>
+        <button id="downloadExtensionBtn" class="btn-secondary" type="button">⬇️ 下载最新 chrome-extension</button>
+        <small style="color: #888; font-size: 11px; display: block; margin-top: 4px;">
+          下载后解压，进入 <span style="font-family: monospace;">cum10m-main/chrome-extension/</span> 并在 Chrome 中“加载已解压”。
+        </small>
       </div>
     </div>
   </details>
