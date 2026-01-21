@@ -127,14 +127,18 @@ function updateChatStatus(text, type = '') {
   chatStatus.className = `chat-status ${type}`;
 }
 
-function setChatControlButtons({ running = false, paused = false } = {}) {
+function setChatControlButtons({ running = false, paused = false, streaming = false } = {}) {
   if (!pauseBtn || !resumeBtn || !cancelBtn) return;
-  if (!isChatMode) {
+  if (streaming) {
     pauseBtn.style.display = 'none';
     resumeBtn.style.display = 'none';
-    cancelBtn.style.display = 'none';
+    cancelBtn.style.display = 'inline-flex';
+    cancelBtn.textContent = '⏹';
+    cancelBtn.title = '停止回复';
     return;
   }
+  cancelBtn.textContent = '⛔';
+  cancelBtn.title = '停止任务';
   if (!running) {
     pauseBtn.style.display = 'none';
     resumeBtn.style.display = 'none';
@@ -151,10 +155,6 @@ function setChatControlButtons({ running = false, paused = false } = {}) {
   }
 }
 
-function syncChatMode() {
-  isChatMode = (chatModeSelect?.value || 'chat') === 'chat';
-  setChatControlButtons({ running: chatExecActive, paused: false });
-}
 
 async function fetchLatestExtensionVersion() {
   const fallbackVersion = chrome.runtime.getManifest()?.version || 'latest';
@@ -937,7 +937,6 @@ let lastAutoSyncAt = 0;
 let chatStreamRequestId = null;
 let chatStreamBuffer = '';
 let chatStreamBubbleEl = null;
-let isChatMode = true;
 
 function isVerboseLogsEnabled() {
   return !!verboseLogsToggle?.checked;
@@ -1119,7 +1118,6 @@ document.addEventListener('DOMContentLoaded', () => {
     themeSelect.value = themeValue || 'light';
     applyTheme(themeSelect.value || 'light');
   }
-  syncChatMode();
 });
 
   // 加载会话上下文
@@ -1129,11 +1127,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (sessionToggle && chatSidebar) {
     sessionToggle.addEventListener('click', () => {
       chatSidebar.classList.toggle('hidden');
-    });
-  }
-  if (chatModeSelect) {
-    chatModeSelect.addEventListener('change', () => {
-      syncChatMode();
     });
   }
   if (newChatBtn) {
@@ -1436,6 +1429,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chatStreamRequestId = requestId;
     chatStreamBuffer = '';
     chatStreamBubbleEl = createUpdatableBotMessage('思考中...');
+    setChatControlButtons({ streaming: true });
   }
 
   function applyChatStreamChunk(requestId, chunk) {
@@ -1453,6 +1447,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chatStreamRequestId = null;
     chatStreamBuffer = '';
     chatStreamBubbleEl = null;
+    setChatControlButtons({ running: chatExecActive, paused: false });
   }
 
   function setTaskControlButtons({ running, paused }) {
@@ -1945,6 +1940,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => {
+      if (chatStreamRequestId) {
+        const requestId = chatStreamRequestId;
+        updateChatStatus('已停止回复', 'error');
+        chrome.runtime.sendMessage({ type: 'CHAT_STREAM_CANCEL', requestId }, () => {});
+        if (chatStreamBubbleEl) {
+          chatStreamBubbleEl.textContent = '⏹ 已停止回复';
+        }
+        chatStreamRequestId = null;
+        chatStreamBuffer = '';
+        chatStreamBubbleEl = null;
+        setChatControlButtons({ running: chatExecActive, paused: false });
+        chatSendBtn && (chatSendBtn.disabled = false);
+        return;
+      }
       // 体验优化：先本地解除“有任务在执行”的阻塞，后台再异步停止
       updateChatStatus('正在停止...', 'thinking');
       chrome.runtime.sendMessage({ type: 'TASK_CANCEL' }, () => {});
@@ -2801,12 +2810,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('📥 Popup 收到消息:', message.type, message);
   
   if (message.type === 'LOG_UPDATE') {
-    const shouldShowInLogs = !isChatMode;
+    const logsTab = document.getElementById('logsTab');
+    const shouldShowInLogs = !!logsTab?.classList.contains('active');
     if (shouldShowInLogs && outputArea && message.log) {
       if (shouldShowLogItem(message.log)) {
         log(message.log.message, message.log.type || 'info');
       }
-    } else if (!isChatMode && !outputArea) {
+    } else if (shouldShowInLogs && !outputArea) {
       console.warn('⚠️ 日志更新失败: outputArea 或 log 不存在', { outputArea: !!outputArea, log: message.log });
     }
     if (message.log && chatExecActive) {
@@ -2938,6 +2948,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chatStreamRequestId = null;
       chatStreamBuffer = '';
       chatStreamBubbleEl = null;
+      setChatControlButtons({ running: chatExecActive, paused: false });
       chatSendBtn && (chatSendBtn.disabled = false);
     }
   }

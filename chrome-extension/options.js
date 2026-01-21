@@ -55,18 +55,23 @@ async function loadConfig() {
       'logLevel',
       'confluenceUsername',
     ]);
-    
-    Object.assign(DEFAULT_CONFIG, config);
-    
-    elements.apiUrl.value = DEFAULT_CONFIG.apiUrl || '';
-    elements.apiToken.value = DEFAULT_CONFIG.apiToken || '';
-    elements.model.value = DEFAULT_CONFIG.model || 'gpt-5.2';
-    elements.webhookUrl.value = DEFAULT_CONFIG.webhookUrl || '';
-    elements.confluenceToken.value = DEFAULT_CONFIG.confluenceToken || '';
-    elements.confluenceUsername.value = DEFAULT_CONFIG.confluenceUsername || '';
-    elements.maxSteps.value = DEFAULT_CONFIG.maxSteps || 15;
-    elements.logLevel.value = DEFAULT_CONFIG.logLevel || 'info';
-    elements.verboseLogs.checked = DEFAULT_CONFIG.verboseLogs || false;
+
+    const effective = { ...DEFAULT_CONFIG };
+    Object.entries(config).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        effective[key] = value;
+      }
+    });
+
+    elements.apiUrl.value = effective.apiUrl || DEFAULT_CONFIG.apiUrl;
+    elements.apiToken.value = effective.apiToken || '';
+    elements.model.value = effective.model || 'gpt-5.2';
+    elements.webhookUrl.value = effective.webhookUrl || '';
+    elements.confluenceToken.value = effective.confluenceToken || '';
+    elements.confluenceUsername.value = effective.confluenceUsername || '';
+    elements.maxSteps.value = effective.maxSteps || 15;
+    elements.logLevel.value = effective.logLevel || 'info';
+    elements.verboseLogs.checked = !!effective.verboseLogs;
   } catch (error) {
     showStatus('配置加载失败: ' + error.message, 'error');
   }

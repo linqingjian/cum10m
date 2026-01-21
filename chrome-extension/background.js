@@ -48,6 +48,7 @@ let lastCompleted = null; // { task, result, ts }
 let lastPageInfo = null; // { clickables: [], inputs: [], ... }
 let taskControl = { paused: false, canceled: false };
 let pauseWaiters = [];
+const chatStreamControllers = new Map();
 let activeTaskAbortControllers = new Set();
 let lastPageContextSummary = null;
 const SCREENSHOT_REQUEST_TOKEN = '[[NEED_SCREENSHOT]]';
@@ -766,6 +767,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const sendStatus = (status) => {
       chrome.runtime.sendMessage({ type: 'CHAT_STREAM_STATUS', requestId, status }).catch(() => {});
     };
+    const streamController = new AbortController();
+    chatStreamControllers.set(requestId, streamController);
     handleChatMessage(
       request.message,
       request.model,
@@ -779,7 +782,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         skillMentions: Array.isArray(request.skillMentions) ? request.skillMentions : [],
         stream: true,
         onStreamChunk: sendChunk,
-        onStreamStatus: sendStatus
+        onStreamStatus: sendStatus,
+        abortController: streamController
       }
     )
       .then(reply => {
@@ -789,7 +793,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(error => {
         sendResponse({ success: false, error: error.message || '对话处理失败，请检查控制台日志' });
         chrome.runtime.sendMessage({ type: 'CHAT_STREAM_ERROR', requestId, error: error.message || '对话处理失败' }).catch(() => {});
+      })
+      .finally(() => {
+        chatStreamControllers.delete(requestId);
       });
+    return true;
+  } else if (request.type === 'CHAT_STREAM_CANCEL') {
+    const requestId = request.requestId;
+    if (requestId && chatStreamControllers.has(requestId)) {
+      const controller = chatStreamControllers.get(requestId);
+      if (controller) {
+        controller.__userAbort = true;
+        try {
+          controller.abort();
+        } catch (e) {
+          // ignore
+        }
+      }
+      chatStreamControllers.delete(requestId);
+    }
+    sendResponse({ success: true });
     return true;
   } else if (request.type === 'CHAT_MESSAGE') {
     // 纯对话模式：直接调用 AI 进行对话，不执行浏览器操作
@@ -3168,7 +3191,7 @@ async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, option
     };
 
     const runRequest = async (body) => {
-      controller = new AbortController();
+      controller = options.abortController || new AbortController();
       if (currentTask) activeTaskAbortControllers.add(controller);
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -3293,6 +3316,9 @@ async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, option
     return fullText;
   } catch (error) {
     if (error?.name === 'AbortError') {
+      if (options.abortController?.__userAbort) {
+        throw new Error('已停止回复');
+      }
       throw new Error('AI 调用超时');
     }
     throw error;
