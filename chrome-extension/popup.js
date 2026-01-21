@@ -8,7 +8,7 @@ const readStoredValue = (result, key) => {
 };
 const CUSTOM_SKILLS_STORAGE_KEY = storageKey('customSkills');
 const DEFAULT_API_URL = 'https://model-router.meitu.com/v1';
-const GITHUB_REPO_ZIP_URL = 'https://codeload.github.com/linqingjian/cum10m/zip/refs/heads/main';
+const EXTENSION_ZIP_BASE_URL = 'https://linqingjian.github.io/cum10m/extension';
 const GITHUB_MANIFEST_URL = 'https://raw.githubusercontent.com/linqingjian/cum10m/main/chrome-extension/manifest.json';
 const MODEL_MAX_TOKENS = {
   'gpt-5.2': 32768,
@@ -178,7 +178,7 @@ async function downloadLatestExtension() {
   const version = await fetchLatestExtensionVersion();
   const filename = `chrome-extension_${version}.zip`;
   chrome.downloads.download({
-    url: GITHUB_REPO_ZIP_URL,
+    url: `${EXTENSION_ZIP_BASE_URL}/${filename}`,
     filename,
     saveAs: true,
     conflictAction: 'uniquify'

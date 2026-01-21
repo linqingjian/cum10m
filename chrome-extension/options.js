@@ -23,7 +23,7 @@ const elements = {
   status: document.getElementById('status'),
 };
 
-const GITHUB_REPO_ZIP_URL = 'https://codeload.github.com/linqingjian/cum10m/zip/refs/heads/main';
+const EXTENSION_ZIP_BASE_URL = 'https://linqingjian.github.io/cum10m/extension';
 const GITHUB_MANIFEST_URL = 'https://raw.githubusercontent.com/linqingjian/cum10m/main/chrome-extension/manifest.json';
 
 // 默认配置
@@ -219,7 +219,7 @@ async function downloadLatestExtension() {
   const version = await fetchLatestExtensionVersion();
   const filename = `chrome-extension_${version}.zip`;
   chrome.downloads.download({
-    url: GITHUB_REPO_ZIP_URL,
+    url: `${EXTENSION_ZIP_BASE_URL}/${filename}`,
     filename,
     saveAs: true,
     conflictAction: 'uniquify'
