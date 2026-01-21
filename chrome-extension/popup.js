@@ -2289,9 +2289,10 @@ async function callAI(messages) {
     const apiBase = apiUrl?.value?.trim() || DEFAULT_API_URL;
     log(`📡 调用模型: ${modelName}`, 'action');
 
-    const attemptCall = async (useMaxCompletionTokens, allowRetry = true) => {
+    const attemptCall = async (useMaxCompletionTokens, allowRetry = true, overrideModel = null) => {
+      const effectiveModel = overrideModel || modelName;
       const body = {
-        model: modelName,
+        model: effectiveModel,
         messages: messages
       };
       if (useMaxCompletionTokens) {
@@ -2317,8 +2318,18 @@ async function callAI(messages) {
         if (allowRetry && response.status === 400) {
           const lower = responseText.toLowerCase();
           const mentionsBoth = lower.includes('max_tokens') && lower.includes('max_completion_tokens');
+          const unknownModel = lower.includes('unknown_model');
+          if (unknownModel && modelName === 'gpt-5.2') {
+            const fallbackModel = 'gpt-5.2-chat';
+            if (model && model.value === modelName) {
+              model.value = fallbackModel;
+              saveConfig();
+            }
+            log(`⚠️ 模型 ${modelName} 不可用，自动切换到 ${fallbackModel}`, 'warn');
+            return attemptCall(useMaxCompletionTokens, false, fallbackModel);
+          }
           if (mentionsBoth) {
-            return attemptCall(!useMaxCompletionTokens, false);
+            return attemptCall(!useMaxCompletionTokens, false, overrideModel);
           }
         }
         throw new Error(`AI 调用失败 (${response.status}): ${responseText.substring(0, 100)}`);

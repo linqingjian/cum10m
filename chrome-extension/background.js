@@ -2683,7 +2683,25 @@ async function callAI(messages, model = 'gpt-5.2', timeout = 60000, options = {}
     
     if (!response.ok) {
       const errorText = await response.text();
+      let errorCode = '';
+      try {
+        const parsed = JSON.parse(errorText);
+        errorCode = parsed?.error?.code || parsed?.code || '';
+      } catch (e) {
+        // ignore
+      }
+      const isUnknownModel = errorCode === 'unknown_model' || /unknown_model/i.test(errorText);
+      const fallbackModel = modelLower === 'gpt-5.2' ? 'gpt-5.2-chat' : '';
       console.error('AI 调用失败:', response.status, errorText);
+      let errorCode = '';
+      try {
+        const parsed = JSON.parse(errorText);
+        errorCode = parsed?.error?.code || parsed?.code || '';
+      } catch (e) {
+        // ignore
+      }
+      const isUnknownModel = errorCode === 'unknown_model' || /unknown_model/i.test(errorText);
+      const fallbackModel = modelLower === 'gpt-5.2' ? 'gpt-5.2-chat' : '';
       
       // 检查是否是 temperature 不支持的错误（更宽松的检测）
       const isTemperatureError = errorText.includes('temperature') && 
@@ -2697,7 +2715,11 @@ async function callAI(messages, model = 'gpt-5.2', timeout = 60000, options = {}
       
       console.log(`🔍 错误检测: isTemperatureError=${isTemperatureError}, isMaxTokensUnsupported=${isMaxTokensUnsupported}, temperature=${temperature}, originalTemperature=${originalTemperature}`);
       
-      if (isTemperatureError) {
+      if (isUnknownModel && fallbackModel && !options._fallbackTried) {
+        addLog(`⚠️ 模型 ${model} 不可用，自动切换到 ${fallbackModel}`, 'warn');
+        chrome.storage.local.set({ [storageKey('model')]: fallbackModel });
+        return await callAI(messages, fallbackModel, timeout, { ...options, _fallbackTried: true });
+      } else if (isTemperatureError) {
         // 如果是 temperature 错误，自动重试使用默认值（不传 temperature）
         console.log(`⚠️ 检测到 temperature 不支持错误，自动重试使用默认值（不传 temperature 参数）`);
         controller = new AbortController();
@@ -3143,7 +3165,11 @@ async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, option
          errorText.includes('invalid_request_error'));
       const isMaxTokensUnsupported = errorText.includes('max_tokens') &&
         (errorText.includes('Unsupported parameter') || errorText.includes('not supported'));
-      if (isTemperatureError && temperature !== undefined) {
+      if (isUnknownModel && fallbackModel && !options._fallbackTried) {
+        addLog(`⚠️ 模型 ${model} 不可用，自动切换到 ${fallbackModel}`, 'warn');
+        chrome.storage.local.set({ [storageKey('model')]: fallbackModel });
+        return await callAIStream(messages, fallbackModel, timeout, { ...options, _fallbackTried: true }, onChunk);
+      } else if (isTemperatureError && temperature !== undefined) {
         temperature = undefined;
         response = await runRequest(buildBody({ stream: true, temperature: null }));
       } else if (isMaxTokensUnsupported) {

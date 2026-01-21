@@ -116,9 +116,11 @@ async function testConnection() {
   showStatus('正在测试连接...', 'info');
 
   try {
-    const attemptTest = async (useMaxCompletionTokens, allowRetry = true) => {
+    let usedFallbackModel = false;
+    const attemptTest = async (useMaxCompletionTokens, allowRetry = true, overrideModel = null) => {
+      const effectiveModel = overrideModel || model || 'gpt-5.2';
       const body = {
-        model: model || 'gpt-5.2',
+        model: effectiveModel,
         messages: [{ role: 'user', content: 'Hello' }]
       };
       if (useMaxCompletionTokens) {
@@ -145,8 +147,15 @@ async function testConnection() {
       if (allowRetry && response.status === 400) {
         const lower = responseText.toLowerCase();
         const mentionsBoth = lower.includes('max_tokens') && lower.includes('max_completion_tokens');
+        const unknownModel = lower.includes('unknown_model');
+        if (unknownModel && effectiveModel === 'gpt-5.2') {
+          const fallbackModel = 'gpt-5.2-chat';
+          usedFallbackModel = true;
+          elements.model.value = fallbackModel;
+          return attemptTest(useMaxCompletionTokens, false, fallbackModel);
+        }
         if (mentionsBoth) {
-          return attemptTest(!useMaxCompletionTokens, false);
+          return attemptTest(!useMaxCompletionTokens, false, overrideModel);
         }
       }
 
@@ -155,7 +164,11 @@ async function testConnection() {
 
     const preferMaxCompletionTokens = /gpt-5/i.test(model || '');
     await attemptTest(preferMaxCompletionTokens, true);
-    showStatus('✅ 连接测试成功！', 'success');
+    if (usedFallbackModel) {
+      showStatus('✅ 连接测试成功（gpt-5.2 不可用，已切换 gpt-5.2-chat）', 'success');
+    } else {
+      showStatus('✅ 连接测试成功！', 'success');
+    }
   } catch (error) {
     showStatus('❌ 连接测试失败: ' + error.message, 'error');
   } finally {
