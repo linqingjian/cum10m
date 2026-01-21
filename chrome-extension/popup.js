@@ -1315,7 +1315,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.runtime.sendMessage({
       type: 'START_TASK',
       task: pending.taskWithAttachments,
-      model: model.value || 'gpt-4o-mini',
+      model: model.value || 'gpt-5.2',
       confluenceToken: confluenceToken?.value || null,
       preferShenzhou: pending.preferShenzhou,
       contextText: buildContextText(12),
@@ -1643,12 +1643,12 @@ document.addEventListener('DOMContentLoaded', () => {
           type: 'CHAT_MESSAGE_STREAM',
           requestId: requestId,
           message: question,
-          model: model.value || 'gpt-4o-mini',
+          model: model.value || 'gpt-5.2',
           weeklyReportRootPageId: weeklyReportRootPageId?.value || null,
           showPlan: showPlan,
           includePageContext: includePageContext,
           attachments: attachments,
-          allowImages: isImageCapableModel(model.value || 'gpt-4o-mini'),
+          allowImages: isImageCapableModel(model.value || 'gpt-5.2'),
           contextText: contextText,
           skillMentions: skillMentions
         }, (response) => {
@@ -1705,7 +1705,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.runtime.sendMessage({
           type: 'START_TASK',
           task: taskWithAttachments,
-          model: model.value || 'gpt-4o-mini',
+          model: model.value || 'gpt-5.2',
           confluenceToken: confluenceToken?.value || null,
           preferShenzhou: preferShenzhou,
           contextText: contextText,
@@ -2534,7 +2534,7 @@ async function executeTask() {
     outputArea.innerHTML = '';
     log('🚀 开始执行任务...', 'action');
     log(`任务内容: ${task}`, 'info');
-    log(`使用模型: ${model.value || 'gpt-4o-mini'}`, 'info');
+    log(`使用模型: ${model.value || 'gpt-5.2'}`, 'info');
   } else {
     console.error('❌ outputArea 不存在！无法显示日志');
   }

@@ -599,11 +599,11 @@ chrome.runtime.onInstalled.addListener((details) => {
   console.log('🤖 数仓小助手已安装');
   loadConfigFromStorage().catch(() => {});
 
-  // Gemini 在当前路由下经常超时，默认使用更稳定的模型
+  // 默认使用更稳定的模型
   chrome.storage.local.get(['model', storageKey('model')], (result) => {
     const existingModel = readStoredValue(result, 'model');
     if (!existingModel) {
-      chrome.storage.local.set({ [storageKey('model')]: 'gpt-5.2-chat' });
+      chrome.storage.local.set({ [storageKey('model')]: 'gpt-5.2' });
     }
   });
 
@@ -975,7 +975,7 @@ async function startTask(task, model, options = {}) {
 	      let retryCount = 0;
 	      const maxRetries = 2; // 增加重试次数：1次重试 + 1次切换模型
 	      let currentModel = model;
-	      const fallbackModel = 'gpt-4o-mini'; // 备选模型
+	      const fallbackModel = 'gpt-5.2-chat'; // 备选模型
 	      const originalMessages = JSON.parse(JSON.stringify(messages)); // 保存原始 messages 的副本
 	
 	      while (retryCount <= maxRetries) {
@@ -1340,7 +1340,7 @@ function notifyContentScript(status, result = null, error = null) {
 }
 
 // 处理纯对话消息（不执行浏览器操作，但可以调用 Confluence API）
-async function handleChatMessage(message, model = 'gpt-4o-mini', weeklyReportRootPageId = null, options = {}) {
+async function handleChatMessage(message, model = 'gpt-5.2', weeklyReportRootPageId = null, options = {}) {
   await loadConfigFromStorage();
   console.log('💬 处理对话消息:', message);
   
@@ -2617,7 +2617,7 @@ async function syncPageContext() {
 }
 
 // 调用 AI（带超时处理）
-async function callAI(messages, model = 'gemini-3-pro-preview', timeout = 60000, options = {}) {
+async function callAI(messages, model = 'gpt-5.2', timeout = 60000, options = {}) {
   let controller = null;
   try {
     await loadConfigFromStorage();
@@ -3079,7 +3079,7 @@ usage: ${JSON.stringify(data.usage)}`;
   }
 }
 
-async function callAIStream(messages, model = 'gemini-3-pro-preview', timeout = 60000, options = {}, onChunk = null) {
+async function callAIStream(messages, model = 'gpt-5.2', timeout = 60000, options = {}, onChunk = null) {
   let controller = null;
   try {
     await loadConfigFromStorage();

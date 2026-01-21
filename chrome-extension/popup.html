@@ -886,30 +886,101 @@
     }
 
     body.theme-light {
-      --bg-gradient: linear-gradient(180deg, #f6f7fb 0%, #eef1f6 100%);
+      --bg-gradient: linear-gradient(180deg, #f8f9fb 0%, #eef2f7 100%);
       --text-color: #1f2a37;
       --subtitle-color: #6b7280;
-      --panel-bg: rgba(255, 255, 255, 0.8);
-      --panel-strong-bg: rgba(255, 255, 255, 0.9);
-      --panel-border: rgba(31, 41, 55, 0.12);
-      --accent: #4f8cff;
-      --accent-soft: rgba(79, 140, 255, 0.12);
-      --accent-border: rgba(79, 140, 255, 0.35);
+      --panel-bg: rgba(248, 249, 252, 0.95);
+      --panel-strong-bg: rgba(255, 255, 255, 0.98);
+      --panel-border: rgba(15, 23, 42, 0.12);
+      --accent: #1a73e8;
+      --accent-soft: rgba(26, 115, 232, 0.12);
+      --accent-border: rgba(26, 115, 232, 0.25);
       --success: #22c55e;
       --error: #ef4444;
     }
 
+    body.theme-light .chat-header {
+      background: #f5f7fb;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    body.theme-light .chat-title {
+      color: #1a73e8;
+    }
+
+    body.theme-light .chat-body {
+      background: #f2f4f8;
+    }
+
     body.theme-light .chat-messages {
-      background: rgba(255, 255, 255, 0.7);
+      background: #f6f8fb;
+    }
+
+    body.theme-light .chat-sidebar {
+      background: #f1f3f7;
+      border-right: 1px solid #e5e7eb;
+    }
+
+    body.theme-light .chat-sidebar-header {
+      color: #6b7280;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    body.theme-light .chat-sidebar-header button {
+      background: #ffffff;
+      color: #1f2a37;
+      border-color: #e5e7eb;
+    }
+
+    body.theme-light .chat-session-item {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
+    }
+
+    body.theme-light .chat-session-item.active {
+      background: #e8f0fe;
+      border-color: #c6dafc;
+    }
+
+    body.theme-light .chat-session-item-title {
+      color: #1f2a37;
+      font-weight: 600;
+    }
+
+    body.theme-light .chat-session-item-meta {
+      color: #6b7280;
+    }
+
+    body.theme-light .chat-session-item-meta button {
+      background: #f3f4f6;
+      color: #374151;
+      border-color: #e5e7eb;
     }
 
     body.theme-light .message-bubble {
-      background: rgba(255, 255, 255, 0.95);
+      background: #ffffff;
       color: #1f2a37;
     }
 
+    body.theme-light .user-message .message-bubble {
+      background: #e8f0fe;
+      color: #1f2a37;
+      border: 1px solid #c6dafc;
+      border-bottom-right-radius: 4px;
+    }
+
     body.theme-light .bot-message .message-bubble {
-      border: 1px solid rgba(31, 41, 55, 0.1);
+      border: 1px solid #e5e7eb;
+      border-bottom-left-radius: 4px;
+    }
+
+    body.theme-light .message-time {
+      color: #9aa0a6;
+    }
+
+    body.theme-light .message-attachment-image {
+      border-color: #e5e7eb;
     }
 
     body.theme-light .chat-input-container textarea,
@@ -946,7 +1017,29 @@
     }
 
     body.theme-light .message-attachment-file {
-      background: rgba(255, 255, 255, 0.9);
+      background: #ffffff;
+      color: #1f2a37;
+      border-color: #e5e7eb;
+    }
+
+    body.theme-light .code-block {
+      background: #f5f6fa;
+      border-color: #e5e7eb;
+    }
+
+    body.theme-light .code-block-header {
+      color: #1a73e8;
+      background: #eef3ff;
+      border-bottom: 1px solid #dde7ff;
+    }
+
+    body.theme-light .code-copy-btn {
+      background: #ffffff;
+      color: #1f2a37;
+      border: 1px solid #e5e7eb;
+    }
+
+    body.theme-light .code-block pre {
       color: #1f2a37;
     }
 
@@ -1054,8 +1147,8 @@
 	    <span class="quick-btn" data-task="查看当前页面的表结构">📋 看表结构</span>
 	    <span class="quick-btn" data-task="获取当前查询结果">📥 获取结果</span>
 	    <select id="model" class="model-select-inline">
-	      <option value="gpt-5.2-chat" selected>GPT-5.2-Chat</option>
-	      <option value="gpt-5.2">GPT-5.2</option>
+	      <option value="gpt-5.2" selected>GPT-5.2</option>
+	      <option value="gpt-5.2-chat">GPT-5.2-Chat</option>
 	      <option value="gpt-4o-mini">⚡ GPT-4o-mini</option>
 	      <option value="gpt-4o">GPT-4o</option>
 	      <option value="gemini-3-pro-preview">🤖 Gemini-3-Pro</option>
