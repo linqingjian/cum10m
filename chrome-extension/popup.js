@@ -1997,6 +1997,7 @@ function saveConfig() {
   });
 
   chrome.storage.local.set(payload);
+  applyTheme(config.theme || 'dark');
 }
 
 function log(message, type = 'action') {
