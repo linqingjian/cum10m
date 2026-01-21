@@ -8,6 +8,10 @@ const readStoredValue = (result, key) => {
 };
 const CUSTOM_SKILLS_STORAGE_KEY = storageKey('customSkills');
 const DEFAULT_API_URL = 'https://model-router.meitu.com/v1';
+const CHAT_SESSIONS_STORAGE_KEY = storageKey('chatSessions');
+const ACTIVE_SESSION_STORAGE_KEY = storageKey('activeSessionId');
+const DEFAULT_SESSION_TITLE = '新对话';
+const WELCOME_MESSAGE = '你好！我是数仓小助手，可以帮你查询数据、执行SQL、查看表结构、分析任务、搜索文档等。有什么可以帮你的吗？';
 
 // 系统提示词 - 整合完整 Skills
 const SYSTEM_PROMPT = `你是美图公司数仓团队的 AI 助手 "数仓小助手"，负责在神舟大数据平台上执行数据查询和任务管理。
@@ -232,18 +236,30 @@ let skillNameInput, skillDescInput, skillPromptInput, skillSaveBtn, skillCancelB
 let skillSuggest;
 let skillSuggestItems = [];
 let skillSuggestIndex = -1;
+let sessionToggle, chatSidebar, newChatBtn, chatSessionList;
 
 let pendingAttachments = [];
 let pendingExecAfterCancel = null; // { taskWithAttachments, originalText, preferShenzhou, skillMentions }
 let pendingExecCheckTimer = null;
 let pendingExecRetryCount = 0;
 let chatHistory = []; // [{role, content, ts}]
+let chatSessions = [];
+let activeSessionId = null;
 let customSkills = [];
 let editingSkillId = null;
 
 function saveChatHistory() {
   try {
-    chrome.storage.local.set({ chatHistory: chatHistory.slice(-40) });
+    if (!activeSessionId) return;
+    const session = chatSessions.find(s => s.id === activeSessionId);
+    if (session) {
+      session.messages = chatHistory.slice(-80);
+      session.updatedAt = Date.now();
+    }
+    chrome.storage.local.set({
+      [CHAT_SESSIONS_STORAGE_KEY]: chatSessions,
+      [ACTIVE_SESSION_STORAGE_KEY]: activeSessionId
+    });
   } catch (e) {
     // ignore
   }
@@ -255,8 +271,182 @@ function pushChatHistory(role, content) {
   // 不把超长附件原文塞进记忆
   const clipped = text.length > 6000 ? `${text.slice(0, 6000)}\n\n[已截断]` : text;
   chatHistory.push({ role, content: clipped, ts: Date.now() });
+  const session = chatSessions.find(s => s.id === activeSessionId);
+  if (session && session.autoTitle && role === 'user') {
+    session.title = buildSessionTitle(clipped);
+    session.autoTitle = false;
+  }
   if (chatHistory.length > 40) chatHistory = chatHistory.slice(-40);
   saveChatHistory();
+}
+
+function buildSessionTitle(text) {
+  const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return DEFAULT_SESSION_TITLE;
+  return cleaned.length > 20 ? `${cleaned.slice(0, 20)}…` : cleaned;
+}
+
+function ensureActiveSession(initialTitle = '') {
+  if (activeSessionId) return;
+  const id = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const title = initialTitle ? buildSessionTitle(initialTitle) : DEFAULT_SESSION_TITLE;
+  const session = {
+    id,
+    title,
+    autoTitle: !initialTitle,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messages: []
+  };
+  chatSessions.unshift(session);
+  activeSessionId = id;
+  chatHistory = [];
+  renderChatSessionList();
+  renderChatSessionMessages();
+  saveChatHistory();
+}
+
+function renderChatSessionMessages() {
+  if (!chatMessages) return;
+  chatMessages.innerHTML = '';
+  if (!chatHistory || chatHistory.length === 0) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'chat-message bot-message';
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+    renderMessageContent(bubble, WELCOME_MESSAGE);
+    const time = document.createElement('div');
+    time.className = 'message-time';
+    time.textContent = new Date().toLocaleTimeString('zh-CN');
+    messageDiv.appendChild(bubble);
+    messageDiv.appendChild(time);
+    chatMessages.appendChild(messageDiv);
+  } else {
+    chatHistory.forEach(entry => {
+      appendChatMessageFromHistory(entry);
+    });
+  }
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function appendChatMessageFromHistory(entry) {
+  if (!entry) return;
+  const isUser = entry.role === 'user';
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `chat-message ${isUser ? 'user-message' : 'bot-message'}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'message-bubble';
+
+  if (isUser) {
+    renderMessageContent(bubble, entry.content || '');
+  } else {
+    renderBotReplyIntoBubble(bubble, entry.content || '');
+  }
+
+  const time = document.createElement('div');
+  time.className = 'message-time';
+  const ts = entry.ts ? new Date(entry.ts) : new Date();
+  time.textContent = ts.toLocaleTimeString('zh-CN');
+
+  messageDiv.appendChild(bubble);
+  messageDiv.appendChild(time);
+  chatMessages.appendChild(messageDiv);
+}
+
+function renderChatSessionList() {
+  if (!chatSessionList) return;
+  chatSessionList.innerHTML = '';
+  const sessions = [...chatSessions].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  if (sessions.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'chat-session-item';
+    const title = document.createElement('div');
+    title.className = 'chat-session-item-title';
+    title.textContent = '暂无历史会话';
+    empty.appendChild(title);
+    chatSessionList.appendChild(empty);
+    return;
+  }
+  sessions.forEach(session => {
+    const item = document.createElement('div');
+    item.className = `chat-session-item${session.id === activeSessionId ? ' active' : ''}`;
+
+    const title = document.createElement('div');
+    title.className = 'chat-session-item-title';
+    title.textContent = session.title || DEFAULT_SESSION_TITLE;
+
+    const meta = document.createElement('div');
+    meta.className = 'chat-session-item-meta';
+    const timeText = document.createElement('span');
+    const ts = session.updatedAt || session.createdAt;
+    timeText.textContent = ts ? new Date(ts).toLocaleTimeString('zh-CN') : '';
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.textContent = '删除';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      chatSessions = chatSessions.filter(s => s.id !== session.id);
+      if (activeSessionId === session.id) {
+        activeSessionId = null;
+        chatHistory = [];
+        renderChatSessionMessages();
+      }
+      renderChatSessionList();
+      saveChatHistory();
+    });
+    meta.appendChild(timeText);
+    meta.appendChild(deleteBtn);
+
+    item.appendChild(title);
+    item.appendChild(meta);
+    item.addEventListener('click', () => {
+      activeSessionId = session.id;
+      chatHistory = Array.isArray(session.messages) ? session.messages.slice() : [];
+      renderChatSessionList();
+      renderChatSessionMessages();
+      saveChatHistory();
+    });
+    chatSessionList.appendChild(item);
+  });
+}
+
+function loadChatSessions() {
+  chrome.storage.local.get([
+    CHAT_SESSIONS_STORAGE_KEY,
+    ACTIVE_SESSION_STORAGE_KEY,
+    'chatHistory'
+  ], (result) => {
+    const storedSessions = result[CHAT_SESSIONS_STORAGE_KEY];
+    const storedActive = result[ACTIVE_SESSION_STORAGE_KEY];
+    const legacyHistory = result.chatHistory;
+
+    if (Array.isArray(storedSessions) && storedSessions.length > 0) {
+      chatSessions = storedSessions;
+      activeSessionId = storedActive || storedSessions[0].id;
+      const active = chatSessions.find(s => s.id === activeSessionId) || chatSessions[0];
+      activeSessionId = active?.id || null;
+      chatHistory = Array.isArray(active?.messages) ? active.messages.slice() : [];
+    } else if (Array.isArray(legacyHistory) && legacyHistory.length > 0) {
+      const id = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      chatSessions = [{
+        id,
+        title: DEFAULT_SESSION_TITLE,
+        autoTitle: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        messages: legacyHistory
+      }];
+      activeSessionId = id;
+      chatHistory = legacyHistory;
+    } else {
+      chatSessions = [];
+      activeSessionId = null;
+      chatHistory = [];
+    }
+    renderChatSessionList();
+    renderChatSessionMessages();
+    saveChatHistory();
+  });
 }
 
 function buildContextText(maxItems = 12) {
@@ -693,18 +883,16 @@ document.addEventListener('DOMContentLoaded', () => {
   fileInput = document.getElementById('fileInput');
   attachmentBar = document.getElementById('attachmentBar');
   skillSuggest = document.getElementById('skillSuggest');
+  sessionToggle = document.getElementById('sessionToggle');
+  chatSidebar = document.getElementById('chatSidebar');
+  newChatBtn = document.getElementById('newChatBtn');
+  chatSessionList = document.getElementById('chatSessionList');
   skillNameInput = document.getElementById('skillNameInput');
   skillDescInput = document.getElementById('skillDescInput');
   skillPromptInput = document.getElementById('skillPromptInput');
   skillSaveBtn = document.getElementById('skillSaveBtn');
   skillCancelBtn = document.getElementById('skillCancelBtn');
   skillsList = document.getElementById('skillsList');
-  
-  // 设置欢迎消息时间
-  const welcomeTime = document.getElementById('welcomeTime');
-  if (welcomeTime) {
-    welcomeTime.textContent = new Date().toLocaleTimeString('zh-CN');
-  }
   
   // 加载保存的配置
   const configKeys = ['apiUrl', 'apiToken', 'model', 'webhookUrl', 'confluenceToken', 'weeklyReportRootPageId', 'verboseLogs', 'chatShowPlan'];
@@ -735,13 +923,23 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 加载会话上下文
-  chrome.storage.local.get(['chatHistory'], (result) => {
-    if (Array.isArray(result.chatHistory)) {
-      chatHistory = result.chatHistory;
-    }
-  });
+  loadChatSessions();
 
   loadCustomSkills();
+  if (sessionToggle && chatSidebar) {
+    sessionToggle.addEventListener('click', () => {
+      chatSidebar.classList.toggle('hidden');
+    });
+  }
+  if (newChatBtn) {
+    newChatBtn.addEventListener('click', () => {
+      activeSessionId = null;
+      chatHistory = [];
+      ensureActiveSession('');
+      renderChatSessionList();
+      renderChatSessionMessages();
+    });
+  }
   if (skillSaveBtn) skillSaveBtn.addEventListener('click', upsertSkillFromForm);
   if (skillCancelBtn) skillCancelBtn.addEventListener('click', resetSkillForm);
   
@@ -1392,6 +1590,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     const attachments = pendingAttachments.slice(0);
+    ensureActiveSession(question);
 
     if (attachments.length > 0) {
       addUserMessageWithAttachments(question, attachments);
